@@ -13,3 +13,7 @@
 .roo
 .trae
 .windsurf
+
+__pycache__/
+*.pyc
+*.pyo
