@@ -64,7 +64,7 @@ class IntelligentRedAgent:
     # ------------------------------------------------------------------
     # Episode loop
     # ------------------------------------------------------------------
-    def run_episode(self) -> Dict[str, Any]:
+    def run_episode(self, user_guidance: str = "") -> Dict[str, Any]:
         """Run one attack episode. Returns scores + training stats + timeline."""
         obs = self._post("/reset")
         self.action_log = []
@@ -121,7 +121,7 @@ class IntelligentRedAgent:
         # LLM post-episode debrief
         strategy = ""
         if self._llm_available and (len(mistakes) > 0 or self.policy.episode_count % 5 == 0):
-            strategy = llm.post_episode_debrief("red", [], scores, mistakes)
+            strategy = llm.post_episode_debrief("red", [], scores, mistakes, user_guidance)
 
         # Persist to memory
         mem.save_episode("red", self.policy.episode_count, scores, mistakes,

@@ -50,10 +50,12 @@ def main():
     if args.build_ui:
         import shutil
         npm = shutil.which("npm") or ("npm.cmd" if sys.platform == "win32" else "npm")
-        print("Building React UI...")
-        subprocess.run([npm, "run", "build"], cwd=ROOT / "ui")
+        print("Building React UI (Sentinel Core)...")
+        subprocess.run([npm, "install"], cwd=ROOT / "ui" / "sentinel-core")
+        subprocess.run([npm, "run", "build"], cwd=ROOT / "ui" / "sentinel-core")
 
-    src_env = {"PYTHONPATH": str(ROOT / "src")}
+    path_sep = ";" if sys.platform == "win32" else ":"
+    src_env = {"PYTHONPATH": f"{ROOT}{path_sep}{ROOT / 'src'}"}
     print("Starting RvsB Unified Server on http://localhost:7860 ...")
     run(
         [sys.executable, "-m", "uvicorn",

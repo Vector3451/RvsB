@@ -3,8 +3,10 @@ Dashboard API v2 — Concurrent match, model detection, rich SSE events.
 """
 import asyncio
 import json
+import sqlite3
 import sys
 import threading
+import requests
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -38,6 +40,7 @@ class TrainRequest(BaseModel):
     episodes: int = 10
     env_url: str = ENV_URL
     model: str = "dolphin-llama3:latest"
+    guidance: str = ""
 
 
 class MatchRequest(BaseModel):
@@ -45,6 +48,9 @@ class MatchRequest(BaseModel):
     red_model: str = "dolphin-llama3:latest"
     blue_model: str = "dolphin-llama3:latest"
     max_steps: int = 40
+    red_guidance: str = ""
+    blue_guidance: str = ""
+    config: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +122,7 @@ _train_running = threading.Event()
 # ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
-def _run_training_thread(role: str, episodes: int, env_url: str, model: str):
+def _run_training_thread(role: str, episodes: int, env_url: str, model: str, guidance: str):
     import agents.llm.reasoning_layer as rl_mod
     orig = rl_mod.MODEL
     if model and model != "none":
@@ -131,7 +137,7 @@ def _run_training_thread(role: str, episodes: int, env_url: str, model: str):
     try:
         emit("train_start", {"role": role, "episodes": episodes})
         for i in range(episodes):
-            result = agent.run_episode()
+            result = agent.run_episode(guidance)
             
             # Extract reasoning/strategy safely
             strategy = result.get("strategy_debrief", "")
@@ -165,7 +171,7 @@ def train_start(role: str, req: TrainRequest):
     _train_running.set()
     t = threading.Thread(
         target=_run_training_thread,
-        args=(role, req.episodes, req.env_url, req.model),
+        args=(role, req.episodes, req.env_url, req.model, req.guidance),
         daemon=True,
     )
     t.start()
@@ -192,7 +198,7 @@ async def train_stream():
 # ---------------------------------------------------------------------------
 # Concurrent Live Match
 # ---------------------------------------------------------------------------
-def _run_match_thread(env_url: str, red_model: str, blue_model: str, max_steps: int):
+def _run_match_thread(env_url: str, red_model: str, blue_model: str, max_steps: int, red_guidance: str, blue_guidance: str, config: Optional[Dict] = None):
     import agents.llm.reasoning_layer as rl_mod
     if red_model and red_model != "none":
         rl_mod.MODEL = red_model  # both agents share the same model switcher
@@ -201,7 +207,7 @@ def _run_match_thread(env_url: str, red_model: str, blue_model: str, max_steps: 
         _match_events.append({"type": event_type, "data": data})
 
     try:
-        run_concurrent_match(env_url, red_model, blue_model, max_steps, emit)
+        run_concurrent_match(env_url, red_model, blue_model, max_steps, emit, red_guidance, blue_guidance, config)
     except Exception as e:
         emit("error", {"message": str(e)})
     finally:
@@ -216,7 +222,7 @@ def match_start(req: MatchRequest):
     _match_running.set()
     t = threading.Thread(
         target=_run_match_thread,
-        args=(req.env_url, req.red_model, req.blue_model, req.max_steps),
+        args=(req.env_url, req.red_model, req.blue_model, req.max_steps, req.red_guidance, req.blue_guidance, req.config),
         daemon=True,
     )
     t.start()
@@ -257,3 +263,27 @@ def latest_report():
     if not reports:
         raise HTTPException(status_code=404, detail="No reports yet")
     return FileResponse(str(reports[0]), media_type="text/html")
+
+
+# ---------------------------------------------------------------------------
+# Templates (Map Builder)
+# ---------------------------------------------------------------------------
+DB_PATH = Path(__file__).resolve().parents[1] / "agents" / "memory" / "rvsb_memory.db"
+
+class TemplateRequest(BaseModel):
+    name: str
+    config: Dict[str, Any]
+
+@dashboard_router.post("/api/templates/save")
+def save_template(req: TemplateRequest):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS network_templates (name TEXT PRIMARY KEY, config TEXT)")
+        conn.execute("INSERT OR REPLACE INTO network_templates (name, config) VALUES (?, ?)", (req.name, json.dumps(req.config)))
+    return {"status": "saved"}
+
+@dashboard_router.get("/api/templates/list")
+def list_templates():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS network_templates (name TEXT PRIMARY KEY, config TEXT)")
+        rows = conn.execute("SELECT name, config FROM network_templates").fetchall()
+    return [{"name": r[0], "config": json.loads(r[1])} for r in rows]

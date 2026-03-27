@@ -42,6 +42,9 @@ def run_concurrent_match(
     blue_model: str,
     max_steps: int,
     emit: Callable[[str, Any], None],
+    red_guidance: str = "",
+    blue_guidance: str = "",
+    config: Optional[Dict] = None,
 ) -> Dict:
     """
     Run one full match with both agents alternating turns.
@@ -60,15 +63,22 @@ def run_concurrent_match(
     blue_mistakes: List[str] = []
     timeline: List[str] = []
 
+    # Map Template Config to Env Format
+    env_config = {}
+    if config:
+        services = list(config.get("services", {}).keys())
+        exploitable = config.get("exploitable", [])
+        env_config = {"nodes": services, "exploitable": exploitable}
+
     # --- Reset env ---
-    obs = _post(env_url, "/reset")
+    obs = _post(env_url, "/reset", {"config": env_config})
     emit("match_start", {
         "message": "Match started — Red and Blue competing simultaneously",
         "env_url": env_url,
         "red_model": red_model,
         "blue_model": blue_model,
     })
-    emit("network_state", _build_network_state(obs, step=0))
+    emit("network_state", _build_network_state(obs, step=0, config=config))
 
     prev_obs = dict(obs)
 
@@ -105,7 +115,7 @@ def run_concurrent_match(
             "reasoning": red_reasoning,
             "log": entry,
         })
-        emit("network_state", _build_network_state(obs, step + 1))
+        emit("network_state", _build_network_state(obs, step + 1, config))
 
         if obs.get("done"):
             break
@@ -148,7 +158,7 @@ def run_concurrent_match(
         })
 
         obs = obs_after
-        emit("network_state", _build_network_state(obs, step + 1))
+        emit("network_state", _build_network_state(obs, step + 1, config))
         time.sleep(0.1)
 
     # ── Post-episode learning ─────────────────────────────────────────
@@ -167,10 +177,10 @@ def run_concurrent_match(
     red_strategy = blue_strategy = ""
     if llm_available:
         if red_mistakes:
-            red_strategy = llm.post_episode_debrief("red", [], red_scores, red_mistakes)
+            red_strategy = llm.post_episode_debrief("red", [], red_scores, red_mistakes, red_guidance)
         if blue_mistakes:
             blue_debrief_scores = {k: round(1 - v, 3) for k, v in red_scores.items()}
-            blue_strategy = llm.post_episode_debrief("blue", [], blue_debrief_scores, blue_mistakes)
+            blue_strategy = llm.post_episode_debrief("blue", [], blue_debrief_scores, blue_mistakes, blue_guidance)
 
     mem.save_episode("red",  red_policy.episode_count,  red_scores,
                      red_mistakes,  red_strategy,  avg_red)
@@ -213,9 +223,13 @@ def _blue_reward(obs: Dict, prev_obs: Dict) -> float:
     return round(r, 3)
 
 
-def _build_network_state(obs: Dict, step: int) -> Dict:
+def _build_network_state(obs: Dict, step: int, config: Optional[Dict] = None) -> Dict:
     """Build the network map payload consumed by the React live map."""
-    services = ["ssh", "http", "ftp", "smb", "rdp"]
+    if config and "services" in config:
+        services = list(config.get("services", {}).keys())
+    else:
+        services = ["ssh", "http", "ftp", "smb", "rdp"]
+        
     open_svc  = obs.get("open_services",   [])
     patched   = obs.get("patched_services", [])
 

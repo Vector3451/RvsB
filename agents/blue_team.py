@@ -77,7 +77,7 @@ class IntelligentBlueAgent:
         r.raise_for_status()
         return r.json()
 
-    def run_episode(self) -> Dict[str, Any]:
+    def run_episode(self, user_guidance: str = "") -> Dict[str, Any]:
         """Run one defence episode. Returns own stats (not competing scores)."""
         obs = self._post("/reset")
         self.action_log = []
@@ -127,7 +127,7 @@ class IntelligentBlueAgent:
 
         strategy = ""
         if self._llm_available and len(mistakes) > 0:
-            strategy = llm.post_episode_debrief("blue", [], scores, mistakes)
+            strategy = llm.post_episode_debrief("blue", [], scores, mistakes, user_guidance)
 
         mem.save_episode("blue", self.policy.episode_count, scores, mistakes,
                          strategy, avg_reward)

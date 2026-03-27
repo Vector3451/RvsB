@@ -21,7 +21,6 @@ from envs.rvsb_env.models import (
 _FLAG_SECRET = "flag{r3d_t34m_w1ns_" + uuid.uuid4().hex[:8] + "}"
 _FLAG_HASH = hashlib.sha256(_FLAG_SECRET.encode()).hexdigest()
 
-_ALL_SERVICES = ["ssh", "http", "ftp", "smb", "rdp"]
 _ALERT_THRESHOLDS = {"passive": 0, "slow": 1, "aggressive": 3}
 
 
@@ -42,11 +41,17 @@ class RvsBEnvironment(Environment):
         self._failed_attempts = 0
         self._alerts = 0
         self._patched: List[str] = []
+        self._all_services = ["ssh", "http", "ftp", "smb", "rdp"]
+        self._exploitable_services = ["http"]
 
     # ------------------------------------------------------------------
     # OpenEnv required methods
     # ------------------------------------------------------------------
-    def reset(self) -> RvsBObservation:
+    def reset(self, config: dict = None) -> RvsBObservation:
+        config = config or {}
+        self._all_services = config.get("nodes", ["ssh", "http", "ftp", "smb", "rdp"])
+        self._exploitable_services = config.get("exploitable", ["http"])
+        
         self._state = RvsBState(
             episode_id=str(uuid.uuid4()),
             step_count=0,
@@ -56,7 +61,7 @@ class RvsBEnvironment(Environment):
             blue_score=0.0,
             time_remaining=60,
             total_alerts=0,
-            total_services=len(_ALL_SERVICES),
+            total_services=len(self._all_services),
             found_services=0,
         )
         self._flag_accessible = False
@@ -112,20 +117,20 @@ class RvsBEnvironment(Environment):
         # Find 1–3 services depending on intensity
         scale = {"passive": 1, "slow": 2, "aggressive": 5}
         found = random.sample(
-            [s for s in _ALL_SERVICES if s not in self._found_services],
+            [s for s in self._all_services if s not in self._found_services],
             k=min(scale.get(action.scan_intensity, 1),
-                  len(_ALL_SERVICES) - len(self._found_services))
+                  len(self._all_services) - len(self._found_services))
         )
         self._found_services.extend(found)
         self._state.found_services = len(self._found_services)
 
         # Grader: (found / total) * penalty if alerts
         penalty = max(0.2, 1.0 - 0.1 * self._alerts)
-        score = (len(self._found_services) / len(_ALL_SERVICES)) * penalty
+        score = (len(self._found_services) / len(self._all_services)) * penalty
         self._state.red_score = max(self._state.red_score, score)
 
         return RvsBObservation(
-            done=len(self._found_services) == len(_ALL_SERVICES),
+            done=len(self._found_services) == len(self._all_services),
             reward=round(score, 3),
             open_services=list(self._found_services),
             alert_triggered=alert,
@@ -142,8 +147,8 @@ class RvsBEnvironment(Environment):
                 metadata={"error": "service_patched"},
             )
 
-        # http is exploitable; others require credential brute-force (noisy)
-        success = (action.target_service == "http" and
+        # dynamic check against configured exploitable nodes
+        success = (action.target_service in self._exploitable_services and
                    "sqli" in action.payload.lower())
         if not success:
             self._failed_attempts += 1
@@ -205,7 +210,7 @@ class RvsBEnvironment(Environment):
             if not self._found_services:
                 return 0.0
             penalty = max(0.2, 1.0 - 0.1 * self._alerts)
-            return round((len(self._found_services) / len(_ALL_SERVICES)) * penalty, 3)
+            return round((len(self._found_services) / len(self._all_services)) * penalty, 3)
         if task_id == "precision_exploit":
             return round(1.0 / (1 + self._failed_attempts), 3) if self._foothold else 0.0
         if task_id == "flag_capture":

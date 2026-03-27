@@ -86,6 +86,7 @@ def post_episode_debrief(
     trajectory: List[Dict],
     scores: Dict[str, float],
     mistakes: List[str],
+    user_guidance: str = "",
 ) -> str:
     """
     After an episode, the agent reflects on what went wrong
@@ -95,12 +96,16 @@ def post_episode_debrief(
     mistakes_str = "\n".join(f"- {m}" for m in mistakes[:5]) or "None noted"
     score_str = "\n".join(f"  {k}: {v:.3f}" for k, v in scores.items())
 
+    guidance_block = ""
+    if user_guidance:
+        guidance_block = f"\n\nMASTER DIRECTIVE (HUMAN OVERRIDE):\n{user_guidance}\nYou MUST incorporate this guidance immediately into your strategy."
+
     if role == "red":
         prompt = f"""You are an expert red team operator reviewing a failed attack.
 Scores achieved:
 {score_str}
 Key mistakes made:
-{mistakes_str}
+{mistakes_str}{guidance_block}
 
 Write 2-3 specific, actionable improvements for the NEXT attack attempt.
 Focus on technique, timing, and target prioritization. Be concise."""
@@ -109,7 +114,7 @@ Focus on technique, timing, and target prioritization. Be concise."""
 Defence scores (1 - attacker score):
 {score_str}
 Key mistakes made:
-{mistakes_str}
+{mistakes_str}{guidance_block}
 
 Write 2-3 specific improvements for next time.
 Focus on detection speed, patch priority, and alert response. Be concise."""

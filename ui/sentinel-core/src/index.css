@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --font-headline: "Space Grotesk", sans-serif;
+  --font-body: "Manrope", sans-serif;
+  --font-label: "Manrope", sans-serif;
+
+  --color-background: #101418;
+  --color-primary: #00daf3;
+  --color-primary-container: #009fb2;
+  --color-on-primary: #00363d;
+  --color-secondary: #ffb3b3;
+  --color-secondary-container: #ff525f;
+  --color-on-secondary: #680014;
+  --color-surface: #101418;
+  --color-surface-container-low: #181c20;
+  --color-surface-container-high: #262a2f;
+  --color-surface-container-highest: #31353a;
+  --color-surface-container-lowest: #0a0f13;
+  --color-surface-bright: #353a3e;
+  --color-on-surface: #e0e3e8;
+  --color-on-surface-variant: #c1c6d7;
+  --color-outline-variant: #414754;
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface font-body selection:bg-primary/30;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-surface-container-low/60 backdrop-blur-xl border border-primary/10;
+  }
+  
+  .hud-glow {
+    text-shadow: 0 0 10px rgba(0, 218, 243, 0.5);
+  }
+
+  .grid-bg {
+    background-image: radial-gradient(circle at 1px 1px, rgba(0, 218, 243, 0.05) 1px, transparent 0);
+    background-size: 40px 40px;
+  }
+
+  .scanline {
+    background: linear-gradient(to bottom, transparent 50%, rgba(0, 218, 243, 0.02) 50%);
+    background-size: 100% 4px;
+  }
+}

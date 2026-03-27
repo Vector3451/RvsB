@@ -47,6 +47,9 @@ _env = RvsBEnvironment()
 # ---------------------------------------------------------------------------
 # Request / Response Schemas (Pydantic for FastAPI validation)
 # ---------------------------------------------------------------------------
+class ResetRequest(BaseModel):
+    config: Dict[str, Any] = {}
+
 class ActionRequest(BaseModel):
     type: str                          # 'recon' | 'exploit' | 'exfiltrate'
     target_ip: str = "10.0.0.1"       # recon
@@ -61,16 +64,17 @@ class ActionRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Core OpenEnv Endpoints
 # ---------------------------------------------------------------------------
-@app.get("/", status_code=200)
+@app.get("/api/health", status_code=200)
 def health_check():
-    """Health probe — must return 200 for HF Space deployment check."""
+    """Health probe — can be used for monitoring."""
     return {"status": "ok", "env": "rvsb-ctf", "version": "1.0.0"}
 
 
 @app.post("/reset")
-def reset():
+def reset(req: ResetRequest = None):
     """Start a new episode. Returns initial observation."""
-    obs = _env.reset()
+    config = req.config if req else {}
+    obs = _env.reset(config)
     return JSONResponse(content=asdict(obs))
 
 
@@ -212,14 +216,27 @@ def baseline():
 # ---------------------------------------------------------------------------
 app.include_router(dashboard_router)
 
-UI_DIR = Path(__file__).resolve().parents[3] / "ui" / "dist"
+UI_DIR = Path(__file__).resolve().parents[4] / "ui" / "sentinel-core" / "dist"
 
-if (UI_DIR / "index.html").exists():
-    app.mount("/assets", StaticFiles(directory=str(UI_DIR / "assets")), name="assets")
+if UI_DIR.exists():
+    # Mount assets first
+    if (UI_DIR / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(UI_DIR / "assets")), name="assets")
 
+    # Catch-all for React routing (including the root /)
     @app.get("/{full_path:path}")
-    def serve_react_app(full_path: str):
+    def serve_react_app(full_path: str = ""):
+        # If the path is empty or it's the root, serve index.html
+        if not full_path or full_path == "/":
+            return FileResponse(str(UI_DIR / "index.html"))
+        
         file_path = UI_DIR / full_path
         if file_path.exists() and file_path.is_file():
             return FileResponse(str(file_path))
+        
+        # Fallback to index.html for SPA routing
         return FileResponse(str(UI_DIR / "index.html"))
+else:
+    @app.get("/")
+    def no_ui_fallback():
+        return {"status": "ready", "ui": "not_found", "msg": "Run start.py --build-ui"}
