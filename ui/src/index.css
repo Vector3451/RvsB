@@ -1,0 +1,501 @@
+:root {
+  --bg: #080c10;
+  --surface: #0d1117;
+  --card: #161b22;
+  --border: #21262d;
+  --hover: #1c2128;
+  --red: #ff4757;
+  --red-dim: #c0392b;
+  --blue: #1e90ff;
+  --blue-dim: #1565c0;
+  --green: #2ed573;
+  --yellow: #ffa502;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --white: #f0f6fc;
+  --accent: #ff4757;
+  --radius: 10px;
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Layout ── */
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1rem;
+  gap: .25rem;
+}
+
+.sidebar-logo {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--white);
+  padding: 0 .5rem .75rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: .75rem;
+  letter-spacing: -.5px;
+}
+
+.sidebar-logo span {
+  color: var(--red);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  padding: .55rem .8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: .875rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  transition: all .15s;
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.nav-item:hover {
+  background: var(--hover);
+  color: var(--white);
+}
+
+.nav-item.active {
+  background: rgba(255, 71, 87, .12);
+  color: var(--white);
+  border-color: rgba(255, 71, 87, .25);
+}
+
+.nav-item svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+.page-title svg {
+  color: var(--accent);
+}
+
+/* ── Cards ── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+.card-title {
+  font-size: .8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: .75rem;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+/* ── Stat badge ── */
+.stat-badge {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+}
+
+.stat-label {
+  font-size: .75rem;
+  color: var(--text-dim);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--white);
+  line-height: 1;
+}
+
+.stat-sub {
+  font-size: .75rem;
+  color: var(--text-dim);
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .55rem 1.1rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: .85rem;
+  font-weight: 600;
+  font-family: var(--font);
+  transition: all .15s;
+}
+
+.btn-red {
+  background: var(--red);
+  color: #fff;
+}
+
+.btn-red:hover {
+  background: #ff6377;
+}
+
+.btn-blue {
+  background: var(--blue);
+  color: #fff;
+}
+
+.btn-blue:hover {
+  background: #4aa3ff;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.btn-ghost:hover {
+  background: var(--hover);
+  color: var(--white);
+}
+
+.btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+.btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── Terminal / log ── */
+.terminal {
+  background: #010409;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .78rem;
+  line-height: 1.6;
+  max-height: 340px;
+  overflow-y: auto;
+  color: #58a6ff;
+}
+
+.terminal .log-red {
+  color: var(--red);
+}
+
+.terminal .log-blue {
+  color: var(--blue);
+}
+
+.terminal .log-dim {
+  color: var(--text-dim);
+}
+
+.terminal .log-green {
+  color: var(--green);
+}
+
+/* ── Score table ── */
+.score-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.score-table th,
+.score-table td {
+  text-align: left;
+  padding: .65rem .8rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .875rem;
+}
+
+.score-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.score-table tr:last-child td {
+  border-bottom: none;
+}
+
+.tag-red {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.tag-blue {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.tag-green {
+  color: var(--green);
+  font-weight: 700;
+}
+
+/* ── Score ring ── */
+.score-ring-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.score-ring {
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--white);
+  border: 5px solid var(--green);
+}
+
+.score-ring.high {
+  border-color: var(--red);
+}
+
+.score-ring.medium {
+  border-color: var(--yellow);
+}
+
+/* ── Progress bar ── */
+.progress-bar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .4s;
+}
+
+/* ── Toggle ── */
+.toggle-group {
+  display: flex;
+  gap: .5rem;
+}
+
+.toggle-btn {
+  padding: .4rem .9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: .8rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font);
+  transition: all .15s;
+}
+
+.toggle-btn.active {
+  background: var(--card);
+  color: var(--white);
+  border-color: var(--accent);
+}
+
+/* ── Input ── */
+.input-group {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+}
+
+.input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: .45rem .75rem;
+  color: var(--white);
+  font-family: var(--font);
+  font-size: .85rem;
+  width: 80px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ── Pulse dot ── */
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1
+  }
+
+  50% {
+    opacity: .3
+  }
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-red {
+  background: var(--red);
+  animation: pulse 1s infinite;
+}
+
+.dot-blue {
+  background: var(--blue);
+  animation: pulse 1.2s infinite;
+}
+
+.dot-green {
+  background: var(--green);
+}
+
+.dot-dim {
+  background: var(--border);
+}
+
+/* ── Phase badge ── */
+.phase-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .2rem .65rem;
+  border-radius: 20px;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.phase-attack {
+  background: rgba(255, 71, 87, .15);
+  color: var(--red);
+  border: 1px solid rgba(255, 71, 87, .3);
+}
+
+.phase-defend {
+  background: rgba(30, 144, 255, .15);
+  color: var(--blue);
+  border: 1px solid rgba(30, 144, 255, .3);
+}
+
+.phase-idle {
+  background: rgba(139, 148, 158, .1);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.phase-report {
+  background: rgba(46, 213, 115, .15);
+  color: var(--green);
+  border: 1px solid rgba(46, 213, 115, .3);
+}
+
+/* ── Iframe report ── */
+.report-frame {
+  width: 100%;
+  height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+/* ── Recharts override ── */
+.recharts-cartesian-axis-tick-value {
+  fill: var(--text-dim) !important;
+  font-size: 11px;
+}
+
+.recharts-tooltip-wrapper {
+  outline: none;
+}
+
+/* ── Animations ── */
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}

@@ -1,0 +1,140 @@
+# RvsB Platform — Full Redesign Implementation Plan
+
+This plan replaces the scripted agent prototype with a real, trainable, professional-grade security simulation platform suitable for corporate use.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Critical decision — AI Agent Backend (requires your choice):**
+>
+> | Option | Technology | Your GPU Load | Quality |
+> |---|---|---|---|
+> | **A — Pure RL** | PyTorch PPO/DQN | ~4 GB VRAM | Fast, deterministic, must train first |
+> | **B — Local LLM** | Ollama + Llama3-8B-Q4 | ~6–8 GB VRAM | Reasoning out-of-box, slower per step |
+> | **C — Hybrid (Recommended)** | RL policy + LLM reasoning layer | ~8–10 GB VRAM | Best of both: speed + intelligence |
+>
+> Option C is recommended: RL handles low-level actions (scan/exploit decisions), LLM generates human-readable reasoning logs and adapts high-level strategy.
+
+> [!IMPORTANT]
+> **Security Environment scope:**
+> - **Option I — Simulated (current):** Fast, portable, no real attacks. Good for demos.
+> - **Option II — Real Docker Services:** Vulnerable apps (DVWA, OpenSSH) in isolated Docker network. Authentic but requires Docker Desktop with enough RAM (recommended).
+>
+> Option II is recommended for corporate authenticity.
+
+---
+
+## Architecture Overview
+
+```
++--------------------+        +--------------------+
+|  RED TEAM AGENT    |        |  BLUE TEAM AGENT   |
+|  RL Policy (PPO)   | <----> |  RL Policy (PPO)   |
+|  + LLM Reasoning   |        |  + LLM Reasoning   |
+|  + Memory Store    |        |  + Memory Store    |
++--------+-----------+        +-----------+--------+
+         |   HTTP/REST                    |
+         v                               v
++--------+--------------------------------+--------+
+|         ENVIRONMENT SERVER (FastAPI)             |
+|   Docker Network: DVWA + OpenSSH + FTP          |
+|   Realistic services with real vulnerabilities  |
++--------------------------------------------------+
+         |
+         v
++--------------------+
+|  REACT DASHBOARD   |
+|  Live match view   |
+|  Training graphs   |
+|  Rating report     |
++--------------------+
+```
+
+---
+
+## Proposed Changes
+
+### 1. Environment — Authentic Docker Network
+#### [MODIFY] `docker-compose.yml` (new full version)
+- `env_server`: FastAPI orchestrator
+- `dvwa`: Damn Vulnerable Web Application (real CVEs like SQLi, XSS)
+- `openssh_target`: SSH server with weak credentials
+- `ftp_target`: vsftpd with anonymous login enabled
+
+#### [MODIFY] [src/envs/rvsb_env/server/environment.py](file:///d:/College/RvsB/src/envs/rvsb_env/server/environment.py)
+- Replace toy simulation with real subprocess calls to `nmap`, `curl`, `ssh`
+- Services are real Docker containers — attacks have real-world consequences within the sandbox
+
+---
+
+### 2. AI Agents — Trainable RL + LLM Reasoning
+#### [NEW] `agents/rl/ppo_agent.py`
+- PyTorch PPO implementation with actor-critic network
+- State space: service list, alert count, foothold status, step number
+- Action space: {scan-passive, scan-slow, scan-aggressive, exploit-http, exploit-ssh, exploit-ftp, patch-http, patch-ssh, patch-ftp, monitor}
+- Trains via GPU (RTX 3060) in the training sandbox
+
+#### [NEW] `agents/rl/experience_buffer.py`
+- Replay buffer storing (state, action, reward, next_state, done)
+- Agents learn from failed attempts: failed exploits get negative reward, successful patches get positive blue reward
+
+#### [NEW] `agents/llm/reasoning_layer.py`
+- Wraps Ollama (Llama3-8B) for high-level decision commentary
+- Called after each episode to generate a "debrief" in natural language
+- Also used for the final rating report
+
+#### [NEW] `agents/memory/episode_store.py`
+- SQLite-backed memory of past episodes
+- Agents query: "what worked last time against this service config?"
+- RAG-style retrieval of relevant past attempts
+
+---
+
+### 3. Training Sandboxes
+#### [NEW] `sandbox/red_sandbox/docker-compose.yml`
+- Isolated copy of environment — Red Team trains alone
+- Faster episodes, no Blue interference
+- `python train.py --agent red --episodes 500`
+
+#### [NEW] `sandbox/blue_sandbox/docker-compose.yml`
+- Blue Team trains against a scripted attacker to learn patching patterns
+
+---
+
+### 4. Professional Web UI (React + FastAPI)
+#### [NEW] `ui/` (Vite + React)
+- **Dashboard**: Live match feed, agent action log, real-time score chart
+- **Training Lab**: Per-agent training controls (start/stop/resume), loss curves, reward graph
+- **Rating Report**: Post-match CVSS-style PDF/HTML report
+  - Attack surface coverage
+  - Time-to-breach
+  - Patch effectiveness
+  - Overall security score (0–100)
+
+#### [NEW] `api/dashboard_api.py`
+- WebSocket endpoint for live match streaming to UI
+- REST endpoints: `/train`, `/match/start`, `/report/generate`
+
+---
+
+### 5. Rating Report System
+#### [NEW] `agents/report/generator.py`
+- Generates structured HTML report after each match
+- Sections: Executive Summary, Attack Timeline, Vulnerability Analysis, Recommendations
+- CVSS-style scoring: Base Score = (AV + AC + PR + UI + S + CIA) / 6
+
+---
+
+## Verification Plan
+
+### Automated Tests
+1. `python -m pytest tests/test_rl_agent.py` — verify PPO policy updates after training loop
+2. `python -m pytest tests/test_environment.py` — verify Docker services are reachable
+3. `python train.py --agent red --episodes 10` — verify reward increases over episodes
+
+### Manual Verification
+1. Run `docker-compose up` — all 4 containers healthy
+2. Open UI at `http://localhost:5173` — dashboard loads, match starts
+3. After 1 episode: rating report generates with scores

@@ -22,8 +22,10 @@ from dataclasses import asdict
 from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from api.dashboard_api import dashboard_router
 
 from envs.rvsb_env.models import (
     ExfiltrateAction,
@@ -203,3 +205,21 @@ def baseline():
         return {"status": "success", "scores": scores}
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="Baseline script timed out.")
+
+
+# ---------------------------------------------------------------------------
+# Dashboard API & React UI
+# ---------------------------------------------------------------------------
+app.include_router(dashboard_router)
+
+UI_DIR = Path(__file__).resolve().parents[3] / "ui" / "dist"
+
+if (UI_DIR / "index.html").exists():
+    app.mount("/assets", StaticFiles(directory=str(UI_DIR / "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    def serve_react_app(full_path: str):
+        file_path = UI_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(UI_DIR / "index.html"))

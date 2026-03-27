@@ -1,111 +1,141 @@
 """
-Blue Team Agent — Defensive defender following a Monitor -> Patch -> Harden cycle.
+Intelligent Blue Team Agent — Hybrid RL + LLM (dolphin-llama3).
 
-Strategy:
-  Phase 1 (MONITOR):  Poll /state every step. Track total_alerts and found_services.
-  Phase 2 (PATCH):    If alerts exceed threshold, patch the most likely targeted service.
-  Phase 3 (HARDEN):   Rotate through patching all discovered services proactively.
+Same learning architecture as Red Team but with reversed reward signals:
+  - Blocking attacks → positive reward
+  - Alert response speed → bonus reward
+  - Failed patches (too late) → negative reward
 
-Blue Team uses the /state endpoint (not /step) to observe the battle, then
-submits "patch" actions disguised as exploit actions with a special payload.
-The environment treats exploit actions on already-patched services as no-ops,
-so patching is encoded as: exploit with payload "PATCH:<service>".
+The Blue Team develops a genuine adaptive detection strategy over time.
 """
-import time
-from typing import Any, Dict, List
+import sys
+from pathlib import Path
 
-from agents.base_agent import BaseAgent
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Alert threshold that triggers emergency patching
-_ALERT_THRESHOLD = 2
+from typing import Any, Dict, List, Optional
 
-# Priority list: most likely targets first
-_PATCH_PRIORITY = ["http", "ssh", "ftp", "smb", "rdp"]
+import requests
+
+from agents.llm import reasoning_layer as llm
+from agents.memory import episode_store as mem
+from agents.rl.ppo_agent import (
+    ACTION_MAP,
+    ACTION_NAMES,
+    PPOPolicy,
+    _encode_obs,
+)
+
+_BASE_URL = "http://localhost:7860"
+
+# Blue Team action mask — defenders don't exploit, they patch and monitor
+BLUE_VALID_ACTIONS = {0, 1, 6, 7, 8, 9}  # scan-passive, scan-slow, patch-*, monitor
+
+def _blue_reward(obs: Dict, prev_obs: Dict) -> float:
+    """
+    Compute a defensive reward based on changes in environment state.
+    Blue Team earns reward for reducing attacker progress.
+    """
+    reward = 0.0
+    # Reward for each alert caught early
+    new_alerts = obs.get("alerts_count", 0) - prev_obs.get("alerts_count", 0)
+    if new_alerts > 0:
+        reward += 0.1 * new_alerts
+    # Reward from env (patching stops attacker)
+    reward += float(obs.get("reward") or 0.0)
+    # Penalty if attacker gained foothold this step
+    if obs.get("foothold_gained") and not prev_obs.get("foothold_gained"):
+        reward -= 0.5
+    # Penalty if flag captured
+    if obs.get("flag_found"):
+        reward -= 1.0
+    return round(reward, 3)
 
 
-class BlueTeamAgent(BaseAgent):
-    """Defensive monitoring and patching agent."""
+class IntelligentBlueAgent:
+    """
+    AI Blue Team agent: learns to defend through reinforcement learning
+    and reflects using dolphin-llama3 to improve detection strategies.
+    """
 
-    def __init__(self, env_url: str, max_steps: int = 60):
-        super().__init__("BLUE-TEAM", env_url, max_steps)
-        self._phase = "monitor"
-        self._patched: List[str] = []
-        self._prev_alerts = 0
-        self._patch_idx = 0
+    def __init__(self, env_url: str = _BASE_URL, max_steps: int = 60):
+        self.env_url = env_url.rstrip("/")
+        self.max_steps = max_steps
+        self.policy = PPOPolicy(role="blue", save_path="agents/rl/blue_policy.json",
+                                epsilon=0.4)
+        self._llm_available = llm.is_available()
+        self.action_log: List[str] = []
+        self.session = requests.Session()
 
-    def on_episode_start(self) -> None:
-        self._phase = "monitor"
-        self._patched = []
-        self._prev_alerts = 0
-        self._patch_idx = 0
-        self.log.info("=== BLUE TEAM: Episode started. Phase: MONITOR ===")
+    def _post(self, path: str, body: Optional[Dict] = None) -> Dict:
+        r = self.session.post(f"{self.env_url}{path}", json=body or {}, timeout=10)
+        r.raise_for_status()
+        return r.json()
 
-    def decide(self, obs: Dict[str, Any]) -> Dict[str, Any]:
-        current_alerts = obs.get("alerts_count", 0)
-        open_services = obs.get("open_services", [])
-        intrusion = obs.get("intrusion_detected", False)
-        foothold = obs.get("foothold_gained", False)
+    def _get(self, path: str, params: Optional[Dict] = None) -> Dict:
+        r = self.session.get(f"{self.env_url}{path}", params=params, timeout=10)
+        r.raise_for_status()
+        return r.json()
 
-        # Emergency response: intrusion or sudden alert spike
-        new_alerts = current_alerts - self._prev_alerts
-        self._prev_alerts = current_alerts
+    def run_episode(self) -> Dict[str, Any]:
+        """Run one defence episode. Returns own stats (not competing scores)."""
+        obs = self._post("/reset")
+        self.action_log = []
+        trajectory = []
+        mistakes = []
+        prev_obs = dict(obs)
 
-        if foothold or intrusion or new_alerts >= _ALERT_THRESHOLD:
-            self.log.info(
-                "ALERT SPIKE detected (new=%d, total=%d). Switching to PATCH.",
-                new_alerts, current_alerts,
-            )
-            self._phase = "patch"
+        for step in range(self.max_steps):
+            if obs.get("done"):
+                break
 
-        # ── Phase 1: MONITOR ──────────────────────────────────────────
-        if self._phase == "monitor":
-            # Passive recon on own network to map services before Red Team does
-            return {
-                "type": "recon",
-                "target_ip": "10.0.0.1",
-                "scan_intensity": "passive",
-            }
+            state = _encode_obs(obs, step, "blue")
+            action_idx, probs = self.policy.select_action(state)
 
-        # ── Phase 2: PATCH ────────────────────────────────────────────
-        if self._phase == "patch":
-            # Patch HTTP first (primary attack vector), then others
-            for svc in _PATCH_PRIORITY:
-                if svc not in self._patched and svc in open_services:
-                    self.log.info("Patching service: %s", svc)
-                    self._patched.append(svc)
-                    # Signal patch remaining after this service
-                    if len(self._patched) >= len(open_services):
-                        self._phase = "harden"
-                    return {
-                        "type": "exploit",
-                        "target_service": svc,
-                        "payload": f"PATCH:{svc}",   # env treats this as a patch
-                    }
-            # Nothing left to patch — move to hardening
-            self._phase = "harden"
+            # Restrict Blue Team to defensive actions only
+            if action_idx not in BLUE_VALID_ACTIONS:
+                action_idx = 9  # fallback: monitor
 
-        # ── Phase 3: HARDEN ───────────────────────────────────────────
-        # Cycle through all services, repatching periodically
-        if _PATCH_PRIORITY:
-            svc = _PATCH_PRIORITY[self._patch_idx % len(_PATCH_PRIORITY)]
-            self._patch_idx += 1
-            return {
-                "type": "exploit",
-                "target_service": svc,
-                "payload": f"PATCH:{svc}",
-            }
+            action_dict = dict(ACTION_MAP[action_idx])
+            action_name = ACTION_NAMES[action_idx]
 
-        # Fallback: keep monitoring
-        return {
-            "type": "recon",
-            "target_ip": "10.0.0.1",
-            "scan_intensity": "passive",
+            reasoning = ""
+            if self._llm_available and step % 4 == 0:
+                reasoning = llm.blue_step_reasoning(obs, action_name, step)
+
+            obs = self._post("/step", action_dict)
+            reward = _blue_reward(obs, prev_obs)
+
+            if reward < 0:
+                mistakes.append(f"Step {step+1}: {action_name} left attacker unchecked (reward={reward:.2f})")
+
+            trajectory.append((state, action_idx, reward))
+            log_line = f"[{step+1:02d}] {action_name:<20} defence_reward={reward:.3f}"
+            if reasoning:
+                log_line += f" | {reasoning[:80]}"
+            self.action_log.append(log_line)
+            prev_obs = dict(obs)
+
+        loss = self.policy.update(trajectory)
+        self.policy.save()
+
+        scores = {
+            task: self._get("/grader", {"task_id": task}).get("score", 0.0)
+            for task in ("stealth_recon", "precision_exploit", "flag_capture")
         }
+        avg_reward = sum(r for _, _, r in trajectory) / max(len(trajectory), 1)
 
-    def on_episode_end(self, scores: Dict[str, float]) -> None:
-        self.log.info("=== BLUE TEAM: Episode complete ===")
-        self.log.info("Services patched this episode: %s", self._patched)
-        for task, score in scores.items():
-            # Blue Team wants LOW Red Team scores = good defense
-            defence = round(1.0 - score, 3)
-            self.log.info("  %-22s  defence=%.3f  (red=%.3f)", task, defence, score)
+        strategy = ""
+        if self._llm_available and len(mistakes) > 0:
+            strategy = llm.post_episode_debrief("blue", [], scores, mistakes)
+
+        mem.save_episode("blue", self.policy.episode_count, scores, mistakes,
+                         strategy, avg_reward)
+
+        return {
+            "scores": scores,
+            "policy_stats": self.policy.stats(),
+            "loss": loss,
+            "avg_reward": avg_reward,
+            "action_log": list(self.action_log),
+        }

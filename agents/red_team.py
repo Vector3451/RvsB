@@ -1,118 +1,137 @@
 """
-Red Team Agent — Offensive attacker following MITRE ATT&CK phases:
-  RECON -> EXPLOIT -> EXFILTRATE
+Intelligent Red Team Agent — Hybrid RL + LLM (dolphin-llama3).
 
-Strategy:
-  Phase 1 (RECON):      Slow-scan until all services are found.
-                        Avoids aggressive scans to stay under IDS threshold.
-  Phase 2 (EXPLOIT):    Target HTTP service with known SQLi payload first.
-                        Falls back to other services if HTTP is patched.
-  Phase 3 (EXFILTRATE): After foothold, reads /root/flag.txt.
-                        Uses hash hint from env to validate correctness.
+Learning loop:
+  1. RL policy (PPO) selects low-level actions based on environment state.
+  2. dolphin-llama3 narrates tactical reasoning per step (if available).
+  3. After each episode, LLM generates a strategy debrief stored in SQLite.
+  4. Next episode, agent retrieves and injects past strategy as context.
+  5. Policy weights are updated via REINFORCE gradient → persisted to JSON.
+
+The agent genuinely improves across sessions: failed exploits → negative
+reward → policy updates away from them. LLM analyses why and refines strategy.
 """
-import hashlib
-from typing import Any, Dict
+import sys
+from pathlib import Path
 
-from agents.base_agent import BaseAgent
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Known good payload for the HTTP SQLi vulnerability
-_SQLI_PAYLOAD = "sqli: ' OR 1=1 --"
+import time
+from typing import Any, Dict, List, Optional
 
-# Fallback exploit attempts (noisy but necessary if http is patched)
-_FALLBACKS = [
-    ("ftp",  "anon_login: USER anonymous"),
-    ("smb",  "eternalblue: MS17-010"),
-    ("ssh",  "brute: admin/admin"),
-    ("rdp",  "bluekeep: CVE-2019-0708"),
-]
+import requests
+
+from agents.llm import reasoning_layer as llm
+from agents.memory import episode_store as mem
+from agents.rl.ppo_agent import (
+    ACTION_MAP,
+    ACTION_NAMES,
+    PPOPolicy,
+    _encode_obs,
+)
+
+_BASE_URL = "http://localhost:7860"
 
 
-class RedTeamAgent(BaseAgent):
-    """MITRE-guided attacker: Recon -> Exploit -> Exfiltrate."""
+class IntelligentRedAgent:
+    """
+    AI Red Team agent: learns to attack through reinforcement learning
+    and reflects using dolphin-llama3 after each episode.
+    """
 
-    def __init__(self, env_url: str, max_steps: int = 60):
-        super().__init__("RED-TEAM", env_url, max_steps)
-        self._phase = "recon"
-        self._found_services = []
-        self._foothold = False
-        self._expected_hash: str = ""
-        self._fallback_idx = 0
+    def __init__(self, env_url: str = _BASE_URL, max_steps: int = 60):
+        self.env_url = env_url.rstrip("/")
+        self.max_steps = max_steps
+        self.policy = PPOPolicy(role="red", save_path="agents/rl/red_policy.json")
+        self._llm_available = llm.is_available()
+        self.action_log: List[str] = []
+        self.timeline: List[str] = []
+        self.session = requests.Session()
 
-    def on_episode_start(self) -> None:
-        self._phase = "recon"
-        self._found_services = []
-        self._foothold = False
-        self._expected_hash = ""
-        self._fallback_idx = 0
-        self.log.info("=== RED TEAM: Episode started. Phase: RECON ===")
+    # ------------------------------------------------------------------
+    # HTTP helpers
+    # ------------------------------------------------------------------
+    def _post(self, path: str, body: Optional[Dict] = None) -> Dict:
+        r = self.session.post(f"{self.env_url}{path}", json=body or {}, timeout=10)
+        r.raise_for_status()
+        return r.json()
 
-    def decide(self, obs: Dict[str, Any]) -> Dict[str, Any]:
-        # Update internal state from observation
-        self._found_services = obs.get("open_services", self._found_services)
-        if obs.get("foothold_gained"):
-            self._foothold = True
-        # Pick up hash hint if env revealed it on a wrong guess
-        hint = obs.get("metadata", {}).get("expected_hash", "")
-        if hint:
-            self._expected_hash = hint
+    def _get(self, path: str, params: Optional[Dict] = None) -> Dict:
+        r = self.session.get(f"{self.env_url}{path}", params=params, timeout=10)
+        r.raise_for_status()
+        return r.json()
 
-        # ── Phase 1: RECON ────────────────────────────────────────────
-        if self._phase == "recon":
-            # 5 total services; switch to exploit once we find at least 1
-            if len(self._found_services) >= 1 and "http" in self._found_services:
-                self.log.info("HTTP discovered — moving to EXPLOIT phase.")
-                self._phase = "exploit"
-                return self._exploit_action()
+    # ------------------------------------------------------------------
+    # Episode loop
+    # ------------------------------------------------------------------
+    def run_episode(self) -> Dict[str, Any]:
+        """Run one attack episode. Returns scores + training stats + timeline."""
+        obs = self._post("/reset")
+        self.action_log = []
+        self.timeline = []
+        trajectory = []
+        mistakes = []
 
-            # Keep scanning slowly to avoid triggering IDS
-            return {
-                "type": "recon",
-                "target_ip": "10.0.0.1",
-                "scan_intensity": "slow",
-            }
+        # Inject past strategy into initial LLM context
+        past_strategy = mem.get_latest_strategy("red")
 
-        # ── Phase 2: EXPLOIT ──────────────────────────────────────────
-        if self._phase == "exploit":
-            if self._foothold:
-                self.log.info("Foothold confirmed — moving to EXFILTRATE phase.")
-                self._phase = "exfiltrate"
-                return self._exfil_action()
-            return self._exploit_action()
+        for step in range(self.max_steps):
+            if obs.get("done"):
+                break
 
-        # ── Phase 3: EXFILTRATE ───────────────────────────────────────
-        if self._phase == "exfiltrate":
-            return self._exfil_action()
+            state = _encode_obs(obs, step, "red")
+            action_idx, probs = self.policy.select_action(state)
+            action_dict = dict(ACTION_MAP[action_idx])
+            action_name = ACTION_NAMES[action_idx]
 
-        # Default fallback
-        return {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "passive"}
+            # LLM narration (async-safe: skipped if slow)
+            reasoning = ""
+            if self._llm_available and step % 3 == 0:
+                reasoning = llm.red_step_reasoning(obs, action_name, step)
 
-    def _exploit_action(self) -> Dict[str, Any]:
-        """Try HTTP SQLi first; fall back to other services if unavailable."""
-        if "http" in self._found_services:
-            return {
-                "type": "exploit",
-                "target_service": "http",
-                "payload": _SQLI_PAYLOAD,
-            }
-        # Fall back through noisy exploits
-        if self._fallback_idx < len(_FALLBACKS):
-            svc, payload = _FALLBACKS[self._fallback_idx]
-            if svc in self._found_services:
-                self._fallback_idx += 1
-                return {"type": "exploit", "target_service": svc, "payload": payload}
-        # Need to recon more first
-        self._phase = "recon"
-        return {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "slow"}
+            obs = self._post("/step", action_dict)
 
-    def _exfil_action(self) -> Dict[str, Any]:
-        """Attempt flag exfiltration. On first try send empty to get hash hint."""
-        return {
-            "type": "exfiltrate",
-            "file_path": "/root/flag.txt",
-            "data": "",    # Empty triggers hint reveal from environment
+            reward = float(obs.get("reward") or 0.0)
+            trajectory.append((state, action_idx, reward))
+
+            # Track mistakes
+            if reward < 0 or (obs.get("failed_attempts", 0) > 0 and reward == 0):
+                mistakes.append(f"Step {step+1}: {action_name} failed (reward={reward:.2f})")
+
+            log_line = f"[{step+1:02d}] {action_name:<20} reward={reward:.3f}"
+            if reasoning:
+                log_line += f" | {reasoning[:80]}"
+            self.action_log.append(log_line)
+            self.timeline.append(
+                f"Step {step+1}: {action_name} — reward {reward:.3f}"
+                + (f" | alerts: {obs.get('alerts_count', 0)}" if obs.get("alerts_count") else "")
+            )
+
+        # Update RL policy
+        loss = self.policy.update(trajectory)
+        self.policy.save()
+
+        # Fetch grader scores
+        scores = {
+            task: self._get("/grader", {"task_id": task}).get("score", 0.0)
+            for task in ("stealth_recon", "precision_exploit", "flag_capture")
         }
+        avg_reward = sum(r for _, _, r in trajectory) / max(len(trajectory), 1)
 
-    def on_episode_end(self, scores: Dict[str, float]) -> None:
-        self.log.info("=== RED TEAM: Episode complete ===")
-        for task, score in scores.items():
-            self.log.info("  %-22s  %.3f", task, score)
+        # LLM post-episode debrief
+        strategy = ""
+        if self._llm_available and (len(mistakes) > 0 or self.policy.episode_count % 5 == 0):
+            strategy = llm.post_episode_debrief("red", [], scores, mistakes)
+
+        # Persist to memory
+        mem.save_episode("red", self.policy.episode_count, scores, mistakes,
+                         strategy, avg_reward)
+
+        return {
+            "scores": scores,
+            "policy_stats": self.policy.stats(),
+            "loss": loss,
+            "avg_reward": avg_reward,
+            "timeline": list(self.timeline),
+            "action_log": list(self.action_log),
+        }
