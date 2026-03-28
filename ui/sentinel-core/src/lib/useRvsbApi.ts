@@ -39,6 +39,7 @@ export interface TrainingState {
     totalEpisodes: number;
     avgReward: number;
     episodes: any[];
+    trainStartTime: number | null;
 }
 
 export interface ModelResponse {
@@ -88,7 +89,8 @@ class ApiStore {
             currentEpisode: 0,
             totalEpisodes: 0,
             avgReward: 0,
-            episodes: []
+            episodes: [],
+            trainStartTime: null,
         }
     };
     listeners: Set<() => void> = new Set();
@@ -167,7 +169,9 @@ class ApiStore {
                 this.setTrainingState({
                     role: payload.data.role,
                     totalEpisodes: payload.data.episodes,
-                    episodes: []
+                    episodes: [],
+                    currentEpisode: 0,
+                    trainStartTime: Date.now(),
                 });
             } else if (payload.type === 'episode_done') {
                 this.setTrainingState({
@@ -176,7 +180,7 @@ class ApiStore {
                     episodes: [payload.data, ...this.state.training.episodes].slice(0, 50)
                 });
             } else if (payload.type === 'train_end') {
-                this.setTrainingState({ isTraining: false });
+                this.setTrainingState({ isTraining: false, trainStartTime: null });
                 this.trainSource?.close();
             }
         };
@@ -253,6 +257,10 @@ export function useRvsbApi() {
 
     useEffect(() => {
         apiStore.fetchModels();
+        // Auto-reconnect training stream if training in progress
+        if (apiStore.state.training.isTraining) {
+            apiStore.connectTrainingStream();
+        }
         return apiStore.subscribe(() => setState(apiStore.state));
     }, []);
 

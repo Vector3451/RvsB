@@ -68,20 +68,39 @@ interface CanvasLink {
 
 const VULN_OPTIONS = ['SQLi', 'XSS', 'Unpatched SSH', 'RDP Brute-Force', 'CVE-2024-1234', 'Default Credentials', 'Log4Shell'];
 
-const defaultNode = (typeId: string, x: number, y: number): CanvasNode => ({
-  uid: `${typeId}-${Date.now()}`,
-  typeId,
-  label: getNodeDef(typeId)?.label || typeId.toUpperCase(),
-  x,
-  y,
-  ip: `10.0.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 254) + 1}`,
-  os: 'Linux',
-  ports: typeId === 'http' ? '80, 443' : typeId === 'sql' ? '3306' : typeId === 'rdp' ? '3389' : '22',
-  vulns: [],
-  accessLevel: 'exploitable',
-  securityScore: 30,
-  firewallRules: '',
-});
+const NODE_DEFAULTS: Record<string, Partial<CanvasNode>> = {
+  router: { os: 'Unknown', ports: '179, 520', vulns: [], securityScore: 70, firewallRules: 'ALLOW BGP FROM INTERNAL\nDENY ALL FROM 0.0.0.0/0' },
+  firewall: { os: 'Unknown', ports: '443, 22', vulns: [], securityScore: 85, firewallRules: 'DENY ALL INBOUND\nALLOW 443 FROM TRUSTED' },
+  switch: { os: 'Unknown', ports: '161, 23', vulns: ['Default Credentials'], securityScore: 55, firewallRules: '' },
+  http: { os: 'Linux', ports: '80, 443', vulns: ['SQLi', 'XSS'], securityScore: 35, firewallRules: 'ALLOW 80, 443 FROM 0.0.0.0/0' },
+  ftp: { os: 'Linux', ports: '21, 20', vulns: ['Default Credentials'], securityScore: 25, firewallRules: 'ALLOW 21 FROM INTERNAL' },
+  smb: { os: 'Windows', ports: '445, 139', vulns: ['RDP Brute-Force', 'CVE-2024-1234'], securityScore: 20, firewallRules: 'DENY 445 FROM EXTERNAL' },
+  rdp: { os: 'Windows', ports: '3389', vulns: ['RDP Brute-Force'], securityScore: 30, firewallRules: 'ALLOW 3389 FROM VPN_ONLY' },
+  sql: { os: 'Linux', ports: '3306, 5432', vulns: ['SQLi', 'Default Credentials'], securityScore: 40, firewallRules: 'DENY 3306 FROM EXTERNAL\nALLOW FROM APP_SUBNET' },
+  dns: { os: 'Linux', ports: '53', vulns: [], securityScore: 60, firewallRules: 'ALLOW 53 UDP FROM INTERNAL' },
+  api: { os: 'Linux', ports: '8443, 8080', vulns: ['XSS', 'SQLi'], securityScore: 45, firewallRules: 'ALLOW 8443 FROM GATEWAY' },
+  crm: { os: 'Windows', ports: '80, 1433', vulns: ['SQLi', 'Default Credentials'], securityScore: 30, firewallRules: 'ALLOW 80 FROM OFFICE_NET' },
+  iot: { os: 'Unknown', ports: '1883, 8883', vulns: ['Default Credentials', 'Log4Shell'], securityScore: 15, firewallRules: '' },
+  ssh: { os: 'Linux', ports: '22', vulns: ['Unpatched SSH'], securityScore: 50, firewallRules: 'ALLOW 22 FROM BASTION_IP' },
+};
+
+const defaultNode = (typeId: string, x: number, y: number): CanvasNode => {
+  const defaults = NODE_DEFAULTS[typeId] || {};
+  return {
+    uid: `${typeId}-${Date.now()}`,
+    typeId,
+    label: getNodeDef(typeId)?.label || typeId.toUpperCase(),
+    x,
+    y,
+    ip: `10.0.${Math.floor(Math.random() * 3)}.${Math.floor(Math.random() * 254) + 1}`,
+    os: defaults.os ?? 'Linux',
+    ports: defaults.ports ?? '22',
+    vulns: defaults.vulns ?? [],
+    accessLevel: 'exploitable',
+    securityScore: defaults.securityScore ?? 50,
+    firewallRules: defaults.firewallRules ?? '',
+  };
+};
 
 // ---------------------------------------------------------------------------
 // BuilderView component
@@ -337,7 +356,7 @@ export const BuilderView = () => {
                 </button>
                 {/* Access level indicator */}
                 <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-surface-container-low ${node.accessLevel === 'exploitable' ? 'bg-secondary' :
-                    node.accessLevel === 'honeypot' ? 'bg-yellow-400' : 'bg-green-400'
+                  node.accessLevel === 'honeypot' ? 'bg-yellow-400' : 'bg-green-400'
                   }`} />
               </div>
             </div>
@@ -465,10 +484,10 @@ export const BuilderView = () => {
                         key={level}
                         onClick={() => updateNode('accessLevel', level)}
                         className={`py-2 rounded-lg border text-[9px] font-black uppercase transition-all ${selected.accessLevel === level
-                            ? level === 'exploitable' ? 'bg-secondary/20 border-secondary text-secondary'
-                              : level === 'patched' ? 'bg-green-500/20 border-green-500 text-green-400'
-                                : 'bg-yellow-400/20 border-yellow-400 text-yellow-300'
-                            : 'border-outline-variant/10 text-on-surface/30 hover:bg-surface-container-high'
+                          ? level === 'exploitable' ? 'bg-secondary/20 border-secondary text-secondary'
+                            : level === 'patched' ? 'bg-green-500/20 border-green-500 text-green-400'
+                              : 'bg-yellow-400/20 border-yellow-400 text-yellow-300'
+                          : 'border-outline-variant/10 text-on-surface/30 hover:bg-surface-container-high'
                           }`}
                       >
                         {level}
@@ -505,8 +524,8 @@ export const BuilderView = () => {
                           updateNode('vulns', current);
                         }}
                         className={`px-2 py-1 rounded text-[9px] font-bold transition-all border ${selected.vulns.includes(v)
-                            ? 'bg-secondary/20 border-secondary text-secondary'
-                            : 'border-outline-variant/10 text-on-surface/40 hover:border-outline-variant/40'
+                          ? 'bg-secondary/20 border-secondary text-secondary'
+                          : 'border-outline-variant/10 text-on-surface/40 hover:border-outline-variant/40'
                           }`}
                       >
                         {v}
