@@ -304,12 +304,21 @@ class TemplateRequest(BaseModel):
     name: str
     config: Dict[str, Any]
 
+class TemplateDeleteRequest(BaseModel):
+    name: str
+
 @dashboard_router.post("/api/templates/save")
 def save_template(req: TemplateRequest):
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS network_templates (name TEXT PRIMARY KEY, config TEXT)")
         conn.execute("INSERT OR REPLACE INTO network_templates (name, config) VALUES (?, ?)", (req.name, json.dumps(req.config)))
     return {"status": "saved"}
+
+@dashboard_router.post("/api/templates/delete")
+def delete_template(req: TemplateDeleteRequest):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM network_templates WHERE name = ?", (req.name,))
+    return {"status": "deleted"}
 
 @dashboard_router.get("/api/templates/list")
 def list_templates():

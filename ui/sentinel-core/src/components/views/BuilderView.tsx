@@ -404,18 +404,38 @@ export const BuilderView = () => {
             {templates.map(t => (
               <div
                 key={t.name}
-                onClick={() => setActiveTemplate(t.config)}
-                className={`p-2.5 border rounded-lg text-[10px] font-mono cursor-pointer transition-all flex items-center justify-between group
+                className={`p-2.5 border rounded-lg text-[10px] font-mono transition-all flex items-center justify-between group
                   ${state.activeTemplate?.name === t.config?.name
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-outline-variant/10 text-on-surface/50 hover:border-primary/40 hover:bg-primary/5 hover:text-on-surface'
                   }`}
               >
-                <span className="truncate font-bold">{t.name}</span>
-                {state.activeTemplate?.name === t.config?.name
-                  ? <span className="text-[8px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-black">ACTIVE</span>
-                  : <span className="text-[8px] border border-outline-variant/20 group-hover:border-primary/40 text-on-surface/30 group-hover:text-primary/60 px-1.5 py-0.5 rounded transition-all">USE</span>
-                }
+                <span className="truncate font-bold cursor-pointer flex-1" onClick={() => setActiveTemplate(t.config)}>{t.name}</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    title="Delete Topology"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete topology '${t.name}'?`)) {
+                        await fetch('/api/templates/delete', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ name: t.name })
+                        });
+                        const latest = await fetch('/api/templates/list').then(r => r.json());
+                        setTemplates(latest);
+                        if (state.activeTemplate?.name === t.name) setActiveTemplate(null);
+                      }
+                    }}
+                    className="p-1 hover:bg-secondary/20 hover:text-secondary rounded text-on-surface/30 transition-all opacity-0 group-hover:opacity-100"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                  {state.activeTemplate?.name === t.config?.name
+                    ? <span className="text-[8px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-black cursor-pointer" onClick={() => setActiveTemplate(t.config)}>ACTIVE</span>
+                    : <span className="text-[8px] border border-outline-variant/20 group-hover:border-primary/40 text-on-surface/30 group-hover:text-primary/60 px-1.5 py-0.5 rounded transition-all cursor-pointer" onClick={() => setActiveTemplate(t.config)}>USE</span>
+                  }
+                </div>
               </div>
             ))}
           </div>
