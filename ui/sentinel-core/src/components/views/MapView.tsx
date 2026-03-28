@@ -54,7 +54,7 @@ const LiveActionFeed = ({ logs }: { logs: any[] }) => {
   }, [logs]);
 
   return (
-    <div className="absolute left-4 top-24 bottom-4 w-72 z-40 flex flex-col gap-2">
+    <div className="absolute left-4 top-24 bottom-4 w-96 z-40 flex flex-col gap-2">
       <div className="flex items-center gap-2 px-1 mb-1">
         <Activity size={12} className="text-primary" />
         <span className="text-[9px] font-black uppercase tracking-[0.25em] text-primary">Live Combat Feed</span>
@@ -97,17 +97,17 @@ const LiveActionFeed = ({ logs }: { logs: any[] }) => {
                 </div>
                 {/* Action */}
                 {actionLine && (
-                  <div className={`font-bold ${isRed ? 'text-secondary/80' : isBlue ? 'text-primary/80' : 'text-on-surface/60'}`}>
+                  <div className={`font-bold break-words whitespace-pre-wrap ${isRed ? 'text-secondary/80' : isBlue ? 'text-primary/80' : 'text-on-surface/60'}`}>
                     {actionLine.replace(/^\>[^\]]*\]\s*/, '').replace(/^>\[.*?\]\s*/, '')}
                   </div>
                 )}
                 {/* Reward */}
                 {rewardLine && rewardLine.includes('Reward') && (
-                  <div className="text-on-surface/40 text-[9px] mt-0.5">{rewardLine.replace('>', '').trim()}</div>
+                  <div className="text-on-surface/40 text-[9px] mt-0.5 break-words whitespace-pre-wrap">{rewardLine.replace('>', '').trim()}</div>
                 )}
                 {/* Reasoning */}
                 {reasoning && reasoning.includes('Reasoning') && (
-                  <div className="text-on-surface/30 text-[9px] mt-0.5 italic line-clamp-2">
+                  <div className="text-on-surface/30 text-[9px] mt-0.5 italic break-words whitespace-pre-wrap line-clamp-4">
                     {reasoning.replace('> Reasoning:', '').trim()}
                   </div>
                 )}

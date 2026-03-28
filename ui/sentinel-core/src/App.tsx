@@ -7,6 +7,7 @@ import { BuilderView } from './components/views/BuilderView';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const renderView = () => {
     switch (activeTab) {
@@ -26,9 +27,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background text-on-surface font-body selection:bg-primary/30 overflow-hidden">
       <TopBar />
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
 
-      <main className="ml-20 md:ml-64 pt-16 h-screen relative">
+      <main className={`pt-16 h-screen relative transition-all duration-300 ${isCollapsed ? 'ml-20' : 'ml-64'}`}>
         {renderView()}
       </main>
     </div>
