@@ -54,7 +54,7 @@ const LiveActionFeed = ({ logs }: { logs: any[] }) => {
   }, [logs]);
 
   return (
-    <div className="absolute left-4 top-24 bottom-4 w-96 z-40 flex flex-col gap-2">
+    <div className="absolute left-6 top-24 bottom-6 w-[400px] max-w-lg z-40 flex flex-col gap-2 pointer-events-auto">
       <div className="flex items-center gap-2 px-1 mb-1">
         <Activity size={12} className="text-primary" />
         <span className="text-[9px] font-black uppercase tracking-[0.25em] text-primary">Live Combat Feed</span>
@@ -107,7 +107,7 @@ const LiveActionFeed = ({ logs }: { logs: any[] }) => {
                 )}
                 {/* Reasoning */}
                 {reasoning && reasoning.includes('Reasoning') && (
-                  <div className="text-on-surface/30 text-[9px] mt-0.5 italic break-words whitespace-pre-wrap line-clamp-4">
+                  <div className="text-on-surface/30 text-[9px] mt-1 italic break-words whitespace-pre-wrap">
                     {reasoning.replace('> Reasoning:', '').trim()}
                   </div>
                 )}
@@ -299,24 +299,25 @@ export const MapView = () => {
         </div>
       </div>
 
-      {/* ── Bottom Left: Deploy Controls ─────────────────────────────────── */}
-      <div className="absolute bottom-12 left-80 z-40 space-y-4">
+      {/* ── Bottom Center: Deploy Controls ─────────────────────────────────── */}
+      <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center space-y-4">
         {!state.isRunning && (
-          <div className="flex gap-3">
-            <AgentCounter label="Red Agents" color="red" count={state.redAgents}
-              onInc={() => setRedAgents(state.redAgents + 1)} onDec={() => setRedAgents(state.redAgents - 1)} />
-            <AgentCounter label="Blue Agents" color="blue" count={state.blueAgents}
-              onInc={() => setBlueAgents(state.blueAgents + 1)} onDec={() => setBlueAgents(state.blueAgents - 1)} />
+          <div className="flex gap-4 p-3 rounded-2xl bg-surface-container-low/80 backdrop-blur-md border border-outline-variant/10 shadow-xl">
+            <AgentCounter label="Red" color="red" count={state.redAgents}
+              onInc={() => setRedAgents(state.redAgents + 1)} onDec={() => setRedAgents(Math.max(1, state.redAgents - 1))} />
+            <div className="w-px bg-outline-variant/20 h-10 my-auto" />
+            <AgentCounter label="Blue" color="blue" count={state.blueAgents}
+              onInc={() => setBlueAgents(state.blueAgents + 1)} onDec={() => setBlueAgents(Math.max(1, state.blueAgents - 1))} />
           </div>
         )}
         {!state.isRunning ? (
           <button onClick={() => startMatch(40)}
-            className="flex items-center gap-4 px-10 py-5 bg-gradient-to-br from-primary to-primary-container text-on-primary font-black text-xs tracking-[0.4em] uppercase rounded-2xl shadow-[0_10px_40px_rgba(0,218,243,0.4)] hover:scale-105 active:scale-95 transition-all cursor-pointer italic">
+            className="flex items-center gap-4 px-12 py-5 bg-gradient-to-br from-primary to-primary-container text-on-primary font-black text-xs tracking-[0.4em] uppercase rounded-full shadow-[0_10px_40px_rgba(0,218,243,0.4)] hover:scale-105 active:scale-95 transition-all cursor-pointer italic">
             <Play size={18} fill="currentColor" /> Deploy Agents
           </button>
         ) : (
           <button onClick={() => stopMatch()}
-            className="flex items-center gap-4 px-10 py-5 bg-gradient-to-br from-secondary to-secondary-container text-on-secondary font-black text-xs tracking-[0.4em] uppercase rounded-2xl shadow-[0_10px_40px_rgba(255,82,95,0.4)] hover:scale-105 active:scale-95 transition-all cursor-pointer italic">
+            className="flex items-center gap-4 px-12 py-5 bg-gradient-to-br from-secondary to-secondary-container text-on-secondary font-black text-xs tracking-[0.4em] uppercase rounded-full shadow-[0_10px_40px_rgba(255,82,95,0.4)] hover:scale-105 active:scale-95 transition-all cursor-pointer italic">
             <Square size={18} fill="currentColor" /> Abort Session
           </button>
         )}
