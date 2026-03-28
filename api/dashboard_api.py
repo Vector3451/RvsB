@@ -188,12 +188,26 @@ def train_stop():
 async def train_stream():
     sent_idx = [0]
     async def generator():
-        while _train_running.is_set() or sent_idx[0] < len(_train_events):
+        # Keep streaming while training is active OR while there are unsent events.
+        # After the run finishes we give a 2-second drain window so train_end is never lost.
+        drain_deadline = [0.0]
+        while True:
             while sent_idx[0] < len(_train_events):
                 event = _train_events[sent_idx[0]]
                 sent_idx[0] += 1
                 yield {"data": json.dumps(event)}
-            await asyncio.sleep(0.15)
+                # Reset the drain timer each time we successfully send something
+                drain_deadline[0] = 0.0
+            if _train_running.is_set():
+                await asyncio.sleep(0.15)
+            else:
+                # Give up to 2 s to drain remaining events
+                if drain_deadline[0] == 0.0:
+                    drain_deadline[0] = asyncio.get_event_loop().time() + 2.0
+                if asyncio.get_event_loop().time() < drain_deadline[0]:
+                    await asyncio.sleep(0.1)
+                else:
+                    break
     return EventSourceResponse(generator())
 
 

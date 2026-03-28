@@ -182,9 +182,22 @@ class ApiStore {
             } else if (payload.type === 'train_end') {
                 this.setTrainingState({ isTraining: false, trainStartTime: null });
                 this.trainSource?.close();
+                this.trainSource = null;
+            }
+        };
+
+        // Auto-reconnect if connection drops while training is still running
+        this.trainSource.onerror = () => {
+            if (this.state.training.isTraining) {
+                setTimeout(() => {
+                    if (this.state.training.isTraining) {
+                        this.connectTrainingStream();
+                    }
+                }, 1500);
             }
         };
     }
+
 
     async startMatch(maxSteps: number = 40) {
         if (this.state.isRunning) return;
@@ -211,14 +224,20 @@ class ApiStore {
 
     async startTraining(role: 'red' | 'blue', episodes: number = 10, model: string = 'dolphin-llama3:latest', guidance: string = '') {
         if (this.state.training.isTraining) return;
+        // Connect SSE FIRST so no events are missed after the server starts
+        this.connectTrainingStream();
         try {
             await fetch(`${this.baseUrl}/api/train/${role}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ episodes, model, guidance }),
             });
-            this.connectTrainingStream();
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            // If POST fails, close the SSE we opened
+            this.trainSource?.close();
+            this.setTrainingState({ isTraining: false });
+            console.error(e);
+        }
     }
 
     async stopMatch() {
@@ -244,6 +263,29 @@ class ApiStore {
 
     setActiveTemplate(template: TemplateConfig | null) {
         this.setState({ activeTemplate: template });
+        // Pre-populate the Test map network so topology is visible before match starts
+        if (template && template.services) {
+            const serviceKeys = Object.keys(template.services);
+            const preNodes = serviceKeys.map((svcId, i) => ({
+                id: `${svcId}-pre-${i}`,
+                label: template.services[svcId]?.label || svcId.toUpperCase(),
+                angle: i * (360 / serviceKeys.length),
+                status: template.exploitable?.includes(svcId) ? 'open' as const : 'patched' as const,
+            }));
+            this.setState({
+                network: {
+                    ...this.state.network,
+                    nodes: preNodes,
+                    step: 0,
+                    alerts: 0,
+                    foothold: false,
+                    attacker_at: null,
+                } as any
+            });
+        } else if (!template) {
+            // Clear the preview when template is deactivated
+            this.setState({ network: null });
+        }
     }
 
     setRedAgents(n: number) { this.setState({ redAgents: Math.max(1, Math.min(5, n)) }); }
