@@ -122,8 +122,9 @@ _train_events: List[Dict] = []
 _train_running = threading.Event()
 
 # ---------------------------------------------------------------------------
-# Training
+# Training routes  — IMPORTANT: specific paths MUST come before /{role}
 # ---------------------------------------------------------------------------
+
 def _run_training_thread(role: str, episodes: int, env_url: str, model: str, guidance: str):
     import agents.llm.reasoning_layer as rl_mod
     orig = rl_mod.MODEL
@@ -161,47 +162,35 @@ def _run_training_thread(role: str, episodes: int, env_url: str, model: str, gui
         emit("train_end", {})
         _train_running.clear()
 
-
-@dashboard_router.post("/api/train/{role}")
-def train_start(role: str, req: TrainRequest):
-    if role not in ("red", "blue"):
-        raise HTTPException(status_code=422, detail="Invalid role")
-    if _match_running.is_set() or _train_running.is_set():
-        raise HTTPException(status_code=409, detail="Engine busy")
-        
-    _train_events.clear()
-    _train_running.set()
-    t = threading.Thread(
-        target=_run_training_thread,
-        args=(role, req.episodes, req.env_url, req.model, req.guidance),
-        daemon=True,
-    )
-    t.start()
-    return {"status": "started"}
-
 @dashboard_router.post("/api/train/stop")
 def train_stop():
+    """Stop the current training session and clear the running flag."""
     _train_running.clear()
     return {"status": "stopped"}
+
+
+@dashboard_router.post("/api/train/reset")
+def train_reset():
+    """Force-clear any stale training flags. Call if UI gets stuck."""
+    _train_running.clear()
+    _train_events.clear()
+    return {"status": "reset"}
+
 
 @dashboard_router.get("/api/train/stream")
 async def train_stream():
     sent_idx = [0]
     async def generator():
-        # Keep streaming while training is active OR while there are unsent events.
-        # After the run finishes we give a 2-second drain window so train_end is never lost.
         drain_deadline = [0.0]
         while True:
             while sent_idx[0] < len(_train_events):
                 event = _train_events[sent_idx[0]]
                 sent_idx[0] += 1
                 yield {"data": json.dumps(event)}
-                # Reset the drain timer each time we successfully send something
                 drain_deadline[0] = 0.0
             if _train_running.is_set():
                 await asyncio.sleep(0.15)
             else:
-                # Give up to 2 s to drain remaining events
                 if drain_deadline[0] == 0.0:
                     drain_deadline[0] = asyncio.get_event_loop().time() + 2.0
                 if asyncio.get_event_loop().time() < drain_deadline[0]:
@@ -210,6 +199,31 @@ async def train_stream():
                     break
     return EventSourceResponse(generator())
 
+
+@dashboard_router.get("/api/train/status")
+def train_status():
+    return {"running": _train_running.is_set(), "event_count": len(_train_events)}
+
+
+@dashboard_router.post("/api/train/{role}")
+def train_start(role: str, req: TrainRequest):
+    if role not in ("red", "blue"):
+        raise HTTPException(status_code=422, detail="role must be 'red' or 'blue'")
+    # Auto-recover from stale flag (previous session crashed without clearing)
+    if _train_running.is_set():
+        _train_running.clear()
+    if _match_running.is_set():
+        raise HTTPException(status_code=409, detail="A live match is running — stop it first")
+
+    _train_events.clear()
+    _train_running.set()
+    t = threading.Thread(
+        target=_run_training_thread,
+        args=(role, req.episodes, req.env_url, req.model, req.guidance),
+        daemon=True,
+    )
+    t.start()
+    return {"status": "started", "role": role, "episodes": req.episodes}
 
 # ---------------------------------------------------------------------------
 # Concurrent Live Match
