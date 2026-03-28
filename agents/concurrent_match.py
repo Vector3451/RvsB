@@ -45,6 +45,8 @@ def run_concurrent_match(
     red_guidance: str = "",
     blue_guidance: str = "",
     config: Optional[Dict] = None,
+    red_agents: int = 1,
+    blue_agents: int = 1,
 ) -> Dict:
     """
     Run one full match with both agents alternating turns.
@@ -52,9 +54,15 @@ def run_concurrent_match(
     emit(event_type, data) is called for every event so the API can
     forward it to SSE subscribers.
     """
-    red_policy = PPOPolicy("red", save_path="agents/rl/red_policy.json")
-    blue_policy = PPOPolicy("blue", save_path="agents/rl/blue_policy.json",
-                            epsilon=0.4)
+    # Initialize multiple policies for multi-agent teams
+    red_policies = [
+        PPOPolicy("red", save_path="agents/rl/red_policy.json")
+        for _ in range(max(1, red_agents))
+    ]
+    blue_policies = [
+        PPOPolicy("blue", save_path="agents/rl/blue_policy.json", epsilon=0.4)
+        for _ in range(max(1, blue_agents))
+    ]
     llm_available = llm.is_available()
 
     red_trajectory: List = []
@@ -86,86 +94,90 @@ def run_concurrent_match(
         if obs.get("done"):
             break
 
-        # ── RED TURN ──────────────────────────────────────────────────
-        red_state = _encode_obs(obs, step, "red")
-        red_idx, _ = red_policy.select_action(red_state)
-        red_action = dict(ACTION_MAP[red_idx])
-        red_name = ACTION_NAMES[red_idx]
+        # ── RED TURNS (all red agents act sequentially) ───────────────────
+        for agent_idx, red_policy in enumerate(red_policies):
+            red_state = _encode_obs(obs, step, "red")
+            red_idx, _ = red_policy.select_action(red_state)
+            red_action = dict(ACTION_MAP[red_idx])
+            red_name = ACTION_NAMES[red_idx]
 
-        red_reasoning = ""
-        if llm_available and step % 3 == 0:
-            red_reasoning = llm.red_step_reasoning(obs, red_name, step)
+            red_reasoning = ""
+            if llm_available and step % 3 == 0:
+                red_reasoning = llm.red_step_reasoning(obs, red_name, step)
 
-        obs = _post(env_url, "/step", red_action)
-        red_reward = float(obs.get("reward") or 0.0)
-        red_trajectory.append((red_state, red_idx, red_reward))
+            obs = _post(env_url, "/step", red_action)
+            red_reward = float(obs.get("reward") or 0.0)
+            red_trajectory.append((red_state, red_idx, red_reward))
 
-        if red_reward < 0 or (obs.get("failed_attempts", 0) > 0 and red_reward == 0):
-            red_mistakes.append(f"Step {step+1}: {red_name} failed (r={red_reward:.2f})")
+            if red_reward < 0 or (obs.get("failed_attempts", 0) > 0 and red_reward == 0):
+                red_mistakes.append(f"Step {step+1} [A{agent_idx+1}]: {red_name} failed (r={red_reward:.2f})")
 
-        entry = f"[{step+1:02d}][RED]  {red_name:<22} reward={red_reward:.3f}"
-        if red_reasoning:
-            entry += f"  |  {red_reasoning[:70]}"
-        timeline.append(entry)
+            entry = f"[{step+1:02d}][RED-A{agent_idx+1}] {red_name:<22} reward={red_reward:.3f}"
+            if red_reasoning:
+                entry += f"  |  {red_reasoning[:70]}"
+            timeline.append(entry)
 
-        emit("red_action", {
-            "step": step + 1,
-            "action": red_name,
-            "reward": red_reward,
-            "reasoning": red_reasoning,
-            "log": entry,
-        })
-        emit("network_state", _build_network_state(obs, step + 1, config))
+            emit("red_action", {
+                "step": step + 1,
+                "agent_id": agent_idx + 1,
+                "action": red_name,
+                "reward": red_reward,
+                "reasoning": red_reasoning,
+                "log": entry,
+            })
+            emit("network_state", _build_network_state(obs, step + 1, config))
 
-        if obs.get("done"):
-            break
+            if obs.get("done"):
+                break
         time.sleep(0.15)
 
-        # ── BLUE TURN ─────────────────────────────────────────────────
-        blue_state = _encode_obs(obs, step, "blue")
-        blue_idx, _ = blue_policy.select_action(blue_state)
-        if blue_idx not in BLUE_VALID:
-            blue_idx = 9
-        blue_action = dict(ACTION_MAP[blue_idx])
-        blue_name = ACTION_NAMES[blue_idx]
+        # ── BLUE TURNS (all blue agents act sequentially) ─────────────────
+        for agent_idx, blue_policy in enumerate(blue_policies):
+            blue_state = _encode_obs(obs, step, "blue")
+            blue_idx, _ = blue_policy.select_action(blue_state)
+            if blue_idx not in BLUE_VALID:
+                blue_idx = 9
+            blue_action = dict(ACTION_MAP[blue_idx])
+            blue_name = ACTION_NAMES[blue_idx]
 
-        blue_reasoning = ""
-        if llm_available and step % 4 == 0:
-            blue_reasoning = llm.blue_step_reasoning(obs, blue_name, step)
+            blue_reasoning = ""
+            if llm_available and step % 4 == 0:
+                blue_reasoning = llm.blue_step_reasoning(obs, blue_name, step)
 
-        obs_after = _post(env_url, "/step", blue_action)
+            obs_after = _post(env_url, "/step", blue_action)
+            blue_reward = _blue_reward(obs_after, obs)
+            blue_trajectory.append((blue_state, blue_idx, blue_reward))
 
-        # Blue reward: defend = inverse of red progress
-        blue_reward = _blue_reward(obs_after, obs)
-        blue_trajectory.append((blue_state, blue_idx, blue_reward))
+            if blue_reward < 0:
+                blue_mistakes.append(f"Step {step+1} [A{agent_idx+1}]: {blue_name} left attacker unchecked (r={blue_reward:.2f})")
 
-        if blue_reward < 0:
-            blue_mistakes.append(
-                f"Step {step+1}: {blue_name} left attacker unchecked (r={blue_reward:.2f})"
-            )
+            blue_entry = f"[{step+1:02d}][BLUE-A{agent_idx+1}] {blue_name:<22} defence={blue_reward:.3f}"
+            if blue_reasoning:
+                blue_entry += f"  |  {blue_reasoning[:70]}"
+            timeline.append(blue_entry)
 
-        blue_entry = f"[{step+1:02d}][BLUE] {blue_name:<22} defence={blue_reward:.3f}"
-        if blue_reasoning:
-            blue_entry += f"  |  {blue_reasoning[:70]}"
-        timeline.append(blue_entry)
+            emit("blue_action", {
+                "step": step + 1,
+                "agent_id": agent_idx + 1,
+                "action": blue_name,
+                "reward": blue_reward,
+                "reasoning": blue_reasoning,
+                "log": blue_entry,
+            })
 
-        emit("blue_action", {
-            "step": step + 1,
-            "action": blue_name,
-            "reward": blue_reward,
-            "reasoning": blue_reasoning,
-            "log": blue_entry,
-        })
+            obs = obs_after
+            emit("network_state", _build_network_state(obs, step + 1, config))
+            time.sleep(0.05)
 
-        obs = obs_after
-        emit("network_state", _build_network_state(obs, step + 1, config))
-        time.sleep(0.1)
-
-    # ── Post-episode learning ─────────────────────────────────────────
-    red_loss  = red_policy.update(red_trajectory)
-    blue_loss = blue_policy.update(blue_trajectory)
-    red_policy.save()
-    blue_policy.save()
+    # ── Post-episode learning for all agents ─────────────────────────────
+    for red_policy in red_policies:
+        red_policy.update(red_trajectory)
+        red_policy.save()
+    for blue_policy in blue_policies:
+        blue_policy.update(blue_trajectory)
+        blue_policy.save()
+    red_loss = 0.0
+    blue_loss = 0.0
 
     red_scores = {
         t: _get(env_url, "/grader", {"task_id": t}).get("score", 0.0)

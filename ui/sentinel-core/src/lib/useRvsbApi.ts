@@ -51,6 +51,7 @@ export interface TemplateConfig {
     name: string;
     services: Record<string, any>;
     exploitable: string[];
+    connections?: { from: string; to: string }[];
 }
 
 export interface ApiState {
@@ -64,6 +65,8 @@ export interface ApiState {
     globalModel: string;
     availableModels: ModelResponse[];
     activeTemplate: TemplateConfig | null;
+    redAgents: number;
+    blueAgents: number;
 }
 
 class ApiStore {
@@ -77,6 +80,8 @@ class ApiStore {
         globalModel: 'dolphin-llama3:latest',
         availableModels: [],
         activeTemplate: null,
+        redAgents: 1,
+        blueAgents: 1,
         training: {
             isTraining: false,
             role: null,
@@ -192,6 +197,8 @@ class ApiStore {
                     red_guidance: this.state.redGuidance,
                     blue_guidance: this.state.blueGuidance,
                     config: this.state.activeTemplate || undefined,
+                    red_agents: this.state.redAgents,
+                    blue_agents: this.state.blueAgents,
                 }),
             });
             this.connectMatchStream();
@@ -234,6 +241,9 @@ class ApiStore {
     setActiveTemplate(template: TemplateConfig | null) {
         this.setState({ activeTemplate: template });
     }
+
+    setRedAgents(n: number) { this.setState({ redAgents: Math.max(1, Math.min(5, n)) }); }
+    setBlueAgents(n: number) { this.setState({ blueAgents: Math.max(1, Math.min(5, n)) }); }
 }
 
 export const apiStore = new ApiStore();
@@ -256,5 +266,7 @@ export function useRvsbApi() {
         setGlobalModel: apiStore.setGlobalModel.bind(apiStore),
         fetchModels: apiStore.fetchModels.bind(apiStore),
         setActiveTemplate: apiStore.setActiveTemplate.bind(apiStore),
+        setRedAgents: apiStore.setRedAgents.bind(apiStore),
+        setBlueAgents: apiStore.setBlueAgents.bind(apiStore),
     };
 }

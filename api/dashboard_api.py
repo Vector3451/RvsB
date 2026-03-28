@@ -51,6 +51,8 @@ class MatchRequest(BaseModel):
     red_guidance: str = ""
     blue_guidance: str = ""
     config: Optional[Dict[str, Any]] = None
+    red_agents: int = 1
+    blue_agents: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +200,7 @@ async def train_stream():
 # ---------------------------------------------------------------------------
 # Concurrent Live Match
 # ---------------------------------------------------------------------------
-def _run_match_thread(env_url: str, red_model: str, blue_model: str, max_steps: int, red_guidance: str, blue_guidance: str, config: Optional[Dict] = None):
+def _run_match_thread(env_url: str, red_model: str, blue_model: str, max_steps: int, red_guidance: str, blue_guidance: str, config: Optional[Dict] = None, red_agents: int = 1, blue_agents: int = 1):
     import agents.llm.reasoning_layer as rl_mod
     if red_model and red_model != "none":
         rl_mod.MODEL = red_model  # both agents share the same model switcher
@@ -207,7 +209,7 @@ def _run_match_thread(env_url: str, red_model: str, blue_model: str, max_steps: 
         _match_events.append({"type": event_type, "data": data})
 
     try:
-        run_concurrent_match(env_url, red_model, blue_model, max_steps, emit, red_guidance, blue_guidance, config)
+        run_concurrent_match(env_url, red_model, blue_model, max_steps, emit, red_guidance, blue_guidance, config, red_agents, blue_agents)
     except Exception as e:
         emit("error", {"message": str(e)})
     finally:
@@ -222,7 +224,7 @@ def match_start(req: MatchRequest):
     _match_running.set()
     t = threading.Thread(
         target=_run_match_thread,
-        args=(req.env_url, req.red_model, req.blue_model, req.max_steps, req.red_guidance, req.blue_guidance, req.config),
+        args=(req.env_url, req.red_model, req.blue_model, req.max_steps, req.red_guidance, req.blue_guidance, req.config, req.red_agents, req.blue_agents),
         daemon=True,
     )
     t.start()

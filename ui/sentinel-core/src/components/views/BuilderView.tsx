@@ -1,314 +1,545 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Server, Database, Shield, Share2, Router, ZoomIn, ZoomOut, Undo, Redo, Focus, Eye, Zap, Save, RefreshCw, Network, AlertTriangle, Globe, Radio } from 'lucide-react';
-import { GlassCard, Button } from '../ui/CyberComponents';
-import { useRvsbApi, NetworkNode } from '../../lib/useRvsbApi';
+import {
+  Server, Database, Shield, Router, Globe, Radio, Save, RefreshCw,
+  Network, Trash2, Link2, X, Settings, Cpu, Lock, Unlock, Bug, Info
+} from 'lucide-react';
+import { Button } from '../ui/CyberComponents';
+import { useRvsbApi, NetworkNode, TemplateConfig } from '../../lib/useRvsbApi';
 
-interface Template {
-  name: string;
-  config: {
-    name: string;
-    services: Record<string, any>;
-    exploitable: string[];
-  };
-}
-
-const AVAILABLE_SERVICES = [
-  { id: 'ssh', label: 'SSH Gateway', icon: Shield, type: 'core' },
-  { id: 'http', label: 'Web Server', icon: Globe, type: 'core' },
-  { id: 'ftp', label: 'File Transfer', icon: Server, type: 'core' },
-  { id: 'smb', label: 'SMB Share', icon: Database, type: 'core' },
-  { id: 'rdp', label: 'Remote Desktop', icon: Server, type: 'core' },
-  { id: 'sql', label: 'Database', icon: Database, type: 'core' },
-  { id: 'api', label: 'Payment API', icon: Network, type: 'custom' },
-  { id: 'crm', label: 'Internal CRM', icon: Database, type: 'custom' },
-  { id: 'iot', label: 'IoT Controller', icon: Radio, type: 'custom' },
+// ---------------------------------------------------------------------------
+// Node type catalogue
+// ---------------------------------------------------------------------------
+const NODE_TYPES = [
+  {
+    category: 'Core Network', items: [
+      { id: 'router', label: 'Core Router', icon: Router, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/40' },
+      { id: 'firewall', label: 'Firewall', icon: Shield, color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/40' },
+      { id: 'switch', label: 'L3 Switch', icon: Network, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/40' },
+    ]
+  },
+  {
+    category: 'Servers', items: [
+      { id: 'http', label: 'Web Server', icon: Globe, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/40' },
+      { id: 'ftp', label: 'FTP Server', icon: Server, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/40' },
+      { id: 'smb', label: 'SMB Share', icon: Database, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/40' },
+      { id: 'rdp', label: 'RDP Host', icon: Cpu, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/40' },
+      { id: 'sql', label: 'SQL Database', icon: Database, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/40' },
+      { id: 'dns', label: 'DNS Server', icon: Globe, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/40' },
+    ]
+  },
+  {
+    category: 'Custom', items: [
+      { id: 'api', label: 'Payment API', icon: Network, color: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/40' },
+      { id: 'crm', label: 'Internal CRM', icon: Database, color: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/40' },
+      { id: 'iot', label: 'IoT Controller', icon: Radio, color: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/40' },
+      { id: 'ssh', label: 'SSH Gateway', icon: Lock, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/40' },
+    ]
+  },
 ];
 
+const ALL_ITEMS = NODE_TYPES.flatMap(g => g.items);
+
+const getNodeDef = (id: string) => ALL_ITEMS.find(n => n.id === id.split('-')[0]) || ALL_ITEMS[0];
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+interface CanvasNode {
+  uid: string;
+  typeId: string;
+  label: string;
+  x: number;
+  y: number;
+  // Metadata
+  ip: string;
+  os: 'Linux' | 'Windows' | 'Unknown';
+  ports: string;
+  vulns: string[];
+  accessLevel: 'exploitable' | 'patched' | 'honeypot';
+  securityScore: number;
+  firewallRules: string;
+}
+
+interface CanvasLink {
+  from: string;
+  to: string;
+}
+
+const VULN_OPTIONS = ['SQLi', 'XSS', 'Unpatched SSH', 'RDP Brute-Force', 'CVE-2024-1234', 'Default Credentials', 'Log4Shell'];
+
+const defaultNode = (typeId: string, x: number, y: number): CanvasNode => ({
+  uid: `${typeId}-${Date.now()}`,
+  typeId,
+  label: getNodeDef(typeId)?.label || typeId.toUpperCase(),
+  x,
+  y,
+  ip: `10.0.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 254) + 1}`,
+  os: 'Linux',
+  ports: typeId === 'http' ? '80, 443' : typeId === 'sql' ? '3306' : typeId === 'rdp' ? '3389' : '22',
+  vulns: [],
+  accessLevel: 'exploitable',
+  securityScore: 30,
+  firewallRules: '',
+});
+
+// ---------------------------------------------------------------------------
+// BuilderView component
+// ---------------------------------------------------------------------------
 export const BuilderView = () => {
   const { state, setActiveTemplate } = useRvsbApi();
-  const [nodes, setNodes] = useState<NetworkNode[]>([]);
-  const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  const [nodes, setNodes] = useState<CanvasNode[]>([]);
+  const [links, setLinks] = useState<CanvasLink[]>([]);
+  const [selected, setSelected] = useState<CanvasNode | null>(null);
+  const [dragging, setDragging] = useState<{ uid: string; ox: number; oy: number } | null>(null);
+  const [linking, setLinking] = useState<string | null>(null); // uid of source node
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
 
   useEffect(() => {
-    // Initial fetch of templates
     fetch('/api/templates/list')
       .then(r => r.json())
-      .then(data => setTemplates(data))
-      .catch(e => console.error("Failed to load templates", e));
+      .then(setTemplates)
+      .catch(console.error);
   }, []);
 
-  const handleSyncLiveMap = () => {
-    if (state.network?.nodes) {
-      setNodes(state.network.nodes.map(n => ({ ...n })));
+  // ── Canvas drag ──────────────────────────────────────────────────────────
+  const onNodeMouseDown = (e: React.MouseEvent, uid: string) => {
+    if (linking) return; // ignore drag when linking
+    e.stopPropagation();
+    const node = nodes.find(n => n.uid === uid)!;
+    setDragging({ uid, ox: e.clientX - node.x, oy: e.clientY - node.y });
+    setSelected(node);
+  };
+
+  const onCanvasMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging) return;
+    setNodes(prev => prev.map(n =>
+      n.uid === dragging.uid ? { ...n, x: e.clientX - dragging.ox, y: e.clientY - dragging.oy } : n
+    ));
+  }, [dragging]);
+
+  const onCanvasMouseUp = () => setDragging(null);
+
+  // ── Drop from sidebar ────────────────────────────────────────────────────
+  const onDragStart = (e: React.DragEvent, typeId: string) => {
+    e.dataTransfer.setData('typeId', typeId);
+  };
+
+  const onCanvasDrop = (e: React.DragEvent) => {
+    const typeId = e.dataTransfer.getData('typeId');
+    if (!typeId) return;
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const x = e.clientX - rect.left - 32;
+    const y = e.clientY - rect.top - 32;
+    const node = defaultNode(typeId, x, y);
+    setNodes(prev => [...prev, node]);
+    setSelected(node);
+  };
+
+  // ── Link mode ────────────────────────────────────────────────────────────
+  const onNodeLinkClick = (e: React.MouseEvent, uid: string) => {
+    e.stopPropagation();
+    if (!linking) {
+      setLinking(uid);
+    } else if (linking !== uid) {
+      if (!links.some(l => (l.from === linking && l.to === uid) || (l.from === uid && l.to === linking))) {
+        setLinks(prev => [...prev, { from: linking, to: uid }]);
+      }
+      setLinking(null);
+    } else {
+      setLinking(null);
     }
   };
 
-  const handleAddService = (svc: typeof AVAILABLE_SERVICES[0]) => {
-    const angle = nodes.length * (360 / (nodes.length + 1 || 1));
-    const newNode: NetworkNode = {
-      id: `${svc.id}-${Date.now()}`,
-      label: svc.label,
-      angle: angle,
-      status: 'open',
-    };
-
-    // Recalculate angles to distribute evenly
-    const newNodes = [...nodes, newNode].map((n, i, arr) => ({
-      ...n,
-      angle: i * (360 / arr.length)
-    }));
-
-    setNodes(newNodes);
-  };
-
-  const handleCommitArchitecture = async () => {
+  // ── Commit topology ──────────────────────────────────────────────────────
+  const handleCommit = async () => {
     setIsSaving(true);
-    setSaveStatus("ENCRYPTING PAYLOAD...");
-
-    // Convert canvas nodes to backend config format
-    const serviceDict: Record<string, any> = {};
+    setSaveStatus('ENCRYPTING…');
+    const services: Record<string, any> = {};
     const exploitable: string[] = [];
-
     nodes.forEach(n => {
-      const baseName = n.id.split('-')[0];
-      serviceDict[baseName] = { active: true, ports: [80] }; // Mocking basic port
-      if (n.status === 'open') exploitable.push(baseName);
+      const base = n.typeId;
+      services[base] = {
+        ip: n.ip,
+        os: n.os,
+        ports: n.ports.split(',').map(p => p.trim()),
+        vulns: n.vulns,
+        accessLevel: n.accessLevel,
+        securityScore: n.securityScore,
+        firewallRules: n.firewallRules,
+        label: n.label,
+      };
+      if (n.accessLevel === 'exploitable') exploitable.push(base);
     });
-
-    const payload = {
-      name: `Custom_Topology_${Date.now()}`,
-      config: {
-        name: `Custom_Topology_${Date.now()}`,
-        services: serviceDict,
-        exploitable: exploitable
-      }
+    const config: TemplateConfig = {
+      name: `Topology_${Date.now()}`,
+      services,
+      exploitable,
+      connections: links,
     };
-
     try {
       await fetch('/api/templates/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ name: config.name, config }),
       });
-      setSaveStatus("SYNCED (200 OK)");
-
-      // Refresh list
       const latest = await fetch('/api/templates/list').then(r => r.json());
       setTemplates(latest);
-    } catch (e) {
-      setSaveStatus("ERR: SYNC_FAILED");
+      setSaveStatus('SYNCED ✓');
+    } catch {
+      setSaveStatus('SYNC FAILED');
     } finally {
       setIsSaving(false);
       setTimeout(() => setSaveStatus(null), 3000);
     }
   };
 
+  // ── Update a selected node field ─────────────────────────────────────────
+  const updateNode = (field: keyof CanvasNode, value: any) => {
+    if (!selected) return;
+    const updated = { ...selected, [field]: value };
+    setSelected(updated);
+    setNodes(prev => prev.map(n => n.uid === updated.uid ? updated : n));
+  };
+
+  const deleteNode = () => {
+    if (!selected) return;
+    setNodes(prev => prev.filter(n => n.uid !== selected.uid));
+    setLinks(prev => prev.filter(l => l.from !== selected.uid && l.to !== selected.uid));
+    setSelected(null);
+  };
+
   return (
-    <div className="flex-1 flex overflow-hidden">
-      {/* Sidebar: Service Picker */}
-      <aside className="w-80 glass-panel border-r border-outline-variant/10 flex flex-col z-20">
-        <div className="p-6 border-b border-outline-variant/10">
-          <h2 className="font-headline font-black text-xl tracking-tighter mb-1 hud-glow text-primary uppercase">Service Arsenal</h2>
-          <p className="text-[0.65rem] text-on-surface-variant font-headline font-bold uppercase tracking-[0.2em] opacity-60">Deploy logic units to canvas</p>
+    <div className="flex-1 flex overflow-hidden h-full">
+
+      {/* ── Left Sidebar: Arsenal ─────────────────────────────────────────── */}
+      <aside className="w-64 bg-surface-container-low/60 border-r border-outline-variant/10 flex flex-col z-20 flex-shrink-0">
+        <div className="p-4 border-b border-outline-variant/10">
+          <h2 className="font-headline font-black text-sm uppercase tracking-[0.2em] text-primary hud-glow">Node Arsenal</h2>
+          <p className="text-[10px] text-on-surface/40 mt-0.5">Drag onto canvas to deploy</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-8 custom-scrollbar">
-          <section>
-            <div className="flex items-center justify-between mb-4 px-2">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full"></span>
-                <h3 className="text-[10px] font-black text-primary uppercase tracking-[0.25em] font-headline">Service Arsenal</h3>
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-4">
+          {NODE_TYPES.map(group => (
+            <div key={group.category}>
+              <div className="text-[9px] font-black uppercase tracking-[0.25em] text-on-surface/40 px-1 mb-2 flex items-center gap-2">
+                <span className="w-1 h-1 bg-primary rounded-full inline-block" />
+                {group.category}
               </div>
-              <button
-                onClick={handleSyncLiveMap}
-                disabled={!state.network?.nodes}
-                className="text-[9px] font-bold text-primary/60 hover:text-primary transition-colors flex items-center gap-1 uppercase tracking-widest"
-              >
-                <RefreshCw size={10} className={state.isRunning ? 'animate-spin' : ''} /> Sync Live
-              </button>
-            </div>
-            <div className="grid grid-cols-1 gap-2.5">
-              {AVAILABLE_SERVICES.map(svc => (
-                <div key={svc.id} onClick={() => handleAddService(svc)} className="group relative p-4 bg-surface-container-low/40 border border-outline-variant/10 rounded-xl hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-all">
-                  <div className="flex items-start justify-between">
-                    <div className="flex gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
-                        <svc.icon className="text-primary group-hover:scale-110 transition-transform" size={20} />
+              <div className="space-y-1">
+                {group.items.map(item => {
+                  const Icon = item.icon;
+                  return (
+                    <div
+                      key={item.id}
+                      draggable
+                      onDragStart={e => onDragStart(e, item.id)}
+                      className="flex items-center gap-3 p-2.5 rounded-lg border border-outline-variant/10 bg-surface-container/40 hover:border-primary/50 hover:bg-primary/5 cursor-grab active:cursor-grabbing transition-all group"
+                    >
+                      <div className={`w-8 h-8 flex items-center justify-center rounded-lg ${item.bg} border ${item.border} flex-shrink-0`}>
+                        <Icon size={16} className={item.color} />
                       </div>
                       <div>
-                        <div className="text-[0.75rem] font-black font-headline uppercase tracking-wider text-on-surface">{svc.label}</div>
-                        <div className="text-[0.6rem] text-on-surface-variant/60 font-medium leading-tight mt-0.5">Click to deploy instance</div>
+                        <div className="text-[11px] font-bold text-on-surface group-hover:text-primary transition-colors">{item.label}</div>
+                        <div className="text-[9px] text-on-surface/30 font-mono">{item.id.toUpperCase()}</div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  );
+                })}
+              </div>
             </div>
-          </section>
-
-          {templates.length > 0 && (
-            <section>
-              <div className="flex items-center gap-2 mb-4 px-2">
-                <span className="w-1.5 h-1.5 bg-secondary rounded-full"></span>
-                <h3 className="text-[10px] font-black text-secondary uppercase tracking-[0.25em] font-headline">Saved Templates</h3>
-              </div>
-              <div className="space-y-2">
-                {templates.map(t => (
-                  <div
-                    key={t.name}
-                    onClick={() => {
-                      setActiveTemplate(t.config);
-                      if (t.config.services) {
-                        const newNodes = Object.entries(t.config.services).map(([svcId, conf], i, arr) => ({
-                          id: `${svcId}-${i}`,
-                          label: svcId.toUpperCase(),
-                          angle: i * (360 / arr.length),
-                          status: t.config.exploitable?.includes(svcId) ? 'open' as const : 'patched' as const
-                        }));
-                        setNodes(newNodes);
-                      }
-                    }}
-                    className={`p-3 border rounded-lg text-xs font-mono transition-all cursor-pointer flex justify-between items-center group ${state.activeTemplate?.name === t.config.name ? 'bg-primary/20 border-primary shadow-[0_0_15px_rgba(0,218,243,0.2)] text-primary' : 'bg-surface-container-low/40 border-outline-variant/10 text-on-surface/80 hover:border-primary/50 hover:bg-surface-container-high'}`}
-                  >
-                    <span className="flex-1 font-bold group-hover:text-primary transition-colors">{t.name}</span>
-                    {state.activeTemplate?.name === t.config.name ? (
-                      <div className="text-[9px] bg-primary text-on-primary px-2 py-0.5 rounded font-black tracking-widest">ACTIVE</div>
-                    ) : (
-                      <div className="text-[9px] border border-outline-variant/20 group-hover:border-primary/50 text-on-surface/40 group-hover:text-primary/70 px-2 py-0.5 rounded font-black tracking-widest transition-colors">ACTIVATE</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+          ))}
         </div>
 
-        <div className="p-6 bg-[#0a0f13] border-t border-outline-variant/10">
-          <Button
-            onClick={handleCommitArchitecture}
-            disabled={isSaving || nodes.length === 0}
-            className="w-full py-3.5 uppercase text-xs tracking-[0.2em]"
-          >
-            {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} {saveStatus || "COMMIT ARCHITECTURE"}
+        <div className="p-3 border-t border-outline-variant/10 space-y-2">
+          {linking && (
+            <div className="py-2 px-3 bg-secondary/20 border border-secondary/40 rounded-lg text-[10px] text-secondary font-bold flex items-center gap-2">
+              <Link2 size={12} />
+              Click another node to link
+            </div>
+          )}
+          <Button onClick={handleCommit} disabled={isSaving || nodes.length === 0} className="w-full py-3 text-xs">
+            {isSaving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
+            {saveStatus || 'Save Topology'}
           </Button>
         </div>
       </aside>
 
-      {/* Canvas */}
-      <div className="flex-1 relative bg-[#0a0f13] grid-bg overflow-hidden">
-        {/* Canvas Content */}
-        <div className="absolute inset-0 scanline opacity-10 pointer-events-none"></div>
+      {/* ── Main Canvas ───────────────────────────────────────────────────── */}
+      <div
+        ref={canvasRef}
+        className="flex-1 relative bg-[#07090c] overflow-hidden"
+        style={{
+          backgroundImage: 'radial-gradient(circle, rgba(0,218,243,0.04) 1px, transparent 1px)',
+          backgroundSize: '28px 28px',
+        }}
+        onMouseMove={onCanvasMouseMove}
+        onMouseUp={onCanvasMouseUp}
+        onDrop={onCanvasDrop}
+        onDragOver={e => e.preventDefault()}
+        onClick={() => { setSelected(null); if (linking) setLinking(null); }}
+      >
+        {/* SVG connection lines */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none">
+          {links.map((link, i) => {
+            const from = nodes.find(n => n.uid === link.from);
+            const to = nodes.find(n => n.uid === link.to);
+            if (!from || !to) return null;
+            return (
+              <line
+                key={i}
+                x1={from.x + 32} y1={from.y + 32}
+                x2={to.x + 32} y2={to.y + 32}
+                stroke="rgba(0,218,243,0.3)"
+                strokeWidth="1.5"
+                strokeDasharray="6 4"
+              />
+            );
+          })}
+        </svg>
 
-        {nodes.map((node) => {
-          // Circular layout calculation (visual only, logic handles config)
-          const radius = 35;
-          const rad = (node.angle - 90) * (Math.PI / 180);
-          const x = 50 + radius * Math.cos(rad);
-          const y = 50 + radius * Math.sin(rad);
-
-          const Icon = AVAILABLE_SERVICES.find(s => s.id === node.id.split('-')[0])?.icon || Server;
+        {/* Nodes */}
+        {nodes.map(node => {
+          const def = getNodeDef(node.typeId);
+          const Icon = def.icon;
+          const isSelected = selected?.uid === node.uid;
+          const isLinker = linking === node.uid;
 
           return (
-            <motion.div
-              key={node.id}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1, left: `${x}%`, top: `${y}%` }}
-              className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer z-10"
-              onClick={() => setSelectedNode(node)}
+            <div
+              key={node.uid}
+              style={{ left: node.x, top: node.y, position: 'absolute' }}
+              onMouseDown={e => onNodeMouseDown(e, node.uid)}
+              onClick={e => { e.stopPropagation(); setSelected(node); }}
+              className="group select-none"
             >
-              <div className={`relative w-16 h-16 flex items-center justify-center bg-primary/10 border ${selectedNode?.id === node.id ? 'border-secondary shadow-[0_0_30px_rgba(255,82,95,0.4)]' : 'border-primary/40 shadow-[0_0_20px_rgba(0,218,243,0.15)]'} rounded-lg backdrop-blur-sm group-hover:scale-110 transition-all`}>
-                <Icon className={selectedNode?.id === node.id ? 'text-secondary' : 'text-primary'} size={24} />
-                <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-surface-container-high px-2 py-1 rounded text-[10px] uppercase font-bold text-on-surface tracking-widest border border-primary/20">
+              <div className={`relative w-16 h-16 flex flex-col items-center justify-center rounded-xl border-2 backdrop-blur-md cursor-move transition-all
+                ${isSelected ? 'border-secondary shadow-[0_0_30px_rgba(255,82,95,0.5)] scale-110' :
+                  isLinker ? 'border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.5)]' :
+                    `${def.border} shadow-[0_0_15px_rgba(0,218,243,0.1)] hover:scale-105`}
+                ${def.bg}`}
+              >
+                <Icon size={20} className={isSelected ? 'text-secondary' : def.color} />
+                <div className={`absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[8px] font-bold uppercase tracking-widest ${isSelected ? 'text-secondary' : 'text-on-surface/60'}`}>
                   {node.label}
                 </div>
+                {/* Link button */}
+                <button
+                  title="Draw connection"
+                  onClick={e => onNodeLinkClick(e, node.uid)}
+                  className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-surface-container-high border border-primary/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/20"
+                >
+                  <Link2 size={10} className="text-primary" />
+                </button>
+                {/* Access level indicator */}
+                <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-surface-container-low ${node.accessLevel === 'exploitable' ? 'bg-secondary' :
+                    node.accessLevel === 'honeypot' ? 'bg-yellow-400' : 'bg-green-400'
+                  }`} />
               </div>
-              {/* Connection line to center */}
-              <svg className="absolute w-[200vw] h-[200vh] -left-[100vw] -top-[100vh] pointer-events-none -z-10" style={{ pointerEvents: 'none' }}>
-                <line
-                  x1={`${x}%`} y1={`${y}%`}
-                  x2="50%" y2="50%"
-                  stroke="rgba(0, 218, 243, 0.2)"
-                  strokeWidth="1"
-                  strokeDasharray="4 4"
-                />
-              </svg>
-            </motion.div>
-          )
+            </div>
+          );
         })}
 
-        {/* Central Router (Builder anchor) */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
-          <div className="w-20 h-20 flex items-center justify-center bg-[#141a1f] border-2 border-primary text-primary rounded-xl shadow-[0_0_40px_rgba(0,218,243,0.4)] relative">
-            <Router size={32} />
-            <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 text-[10px] font-bold tracking-widest uppercase bg-surface-container-highest px-3 py-1 rounded border border-primary/20">
-              CORE ROUTER
+        {/* Empty state hint */}
+        {nodes.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="text-center opacity-20 space-y-3">
+              <Network size={64} className="mx-auto text-primary" />
+              <div className="font-headline font-black text-xl uppercase tracking-[0.3em] text-on-surface">Drag nodes to build your network</div>
+              <div className="text-xs text-on-surface/60">Connect them with the Link button, then configure each node's metadata</div>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Right Panel: Templates & Node Config ─────────────────────────── */}
+      <aside className="w-72 bg-surface-container-low/60 border-l border-outline-variant/10 flex flex-col z-20 flex-shrink-0">
+
+        {/* Saved Templates */}
+        <div className="p-4 border-b border-outline-variant/10">
+          <h3 className="text-[10px] font-black uppercase tracking-[0.25em] text-secondary mb-3 flex items-center gap-2">
+            <span className="w-1 h-1 bg-secondary rounded-full inline-block" />
+            Saved Topologies
+          </h3>
+          <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar">
+            {templates.length === 0 && <div className="text-[10px] text-on-surface/30 italic">No topologies saved yet</div>}
+            {templates.map(t => (
+              <div
+                key={t.name}
+                onClick={() => setActiveTemplate(t.config)}
+                className={`p-2.5 border rounded-lg text-[10px] font-mono cursor-pointer transition-all flex items-center justify-between group
+                  ${state.activeTemplate?.name === t.config?.name
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-outline-variant/10 text-on-surface/50 hover:border-primary/40 hover:bg-primary/5 hover:text-on-surface'
+                  }`}
+              >
+                <span className="truncate font-bold">{t.name}</span>
+                {state.activeTemplate?.name === t.config?.name
+                  ? <span className="text-[8px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-black">ACTIVE</span>
+                  : <span className="text-[8px] border border-outline-variant/20 group-hover:border-primary/40 text-on-surface/30 group-hover:text-primary/60 px-1.5 py-0.5 rounded transition-all">USE</span>
+                }
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Selected Node Drawer/Config Panel */}
-        <AnimatePresence>
-          {selectedNode && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              className="absolute right-0 top-0 bottom-0 w-80 bg-surface-container-low/95 backdrop-blur-3xl border-l border-primary/20 shadow-2xl z-50 p-6 flex flex-col"
-            >
-              <div className="flex justify-between items-start mb-8">
-                <div>
-                  <h3 className="font-headline font-black text-xl text-primary tracking-tighter uppercase">Node Config</h3>
-                  <p className="text-[10px] text-on-surface-variant uppercase tracking-[0.2em] font-label mt-1">{selectedNode.id}</p>
-                </div>
-                <button onClick={() => setSelectedNode(null)} className="text-on-surface/50 hover:text-primary">✕</button>
-              </div>
-
-              <div className="space-y-6 flex-1 overflow-y-auto custom-scrollbar">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Access Level</label>
-                  <select
-                    className="w-full bg-surface-container p-3 rounded-lg border border-outline-variant/10 text-xs font-mono text-on-surface focus:outline-none focus:border-primary/50"
-                    value={selectedNode.status}
-                    onChange={(e) => {
-                      const v = e.target.value as any;
-                      setNodes(nodes.map(n => n.id === selectedNode.id ? { ...n, status: v } : n));
-                      setSelectedNode({ ...selectedNode, status: v });
-                    }}
-                  >
-                    <option value="open">EXPLOITABLE (Open)</option>
-                    <option value="patched">SECURED (Patched)</option>
-                  </select>
+        {/* Node Config Panel */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <AnimatePresence mode="wait">
+            {selected ? (
+              <motion.div
+                key={selected.uid}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="p-4 space-y-4"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-[9px] font-black uppercase tracking-[0.25em] text-primary/60 mb-1 flex items-center gap-2">
+                      <Settings size={10} /> Node Configuration
+                    </div>
+                    <h3 className="font-headline font-black text-lg text-primary tracking-tighter uppercase">{selected.typeId.toUpperCase()}</h3>
+                  </div>
+                  <button onClick={deleteNode} className="p-1.5 hover:bg-secondary/20 rounded-lg text-secondary/50 hover:text-secondary transition-all">
+                    <Trash2 size={14} />
+                  </button>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Simulated Ports</label>
-                  <div className="bg-surface-container p-3 rounded-lg border border-outline-variant/10 flex gap-2">
-                    <span className="px-2 py-1 bg-primary/20 text-primary text-[10px] font-bold rounded">22</span>
-                    <span className="px-2 py-1 bg-primary/20 text-primary text-[10px] font-bold rounded">80</span>
-                    <span className="px-2 py-1 bg-surface-container-highest text-on-surface/50 text-[10px] border border-dashed border-on-surface/20 rounded">+ Add</span>
+                {/* Label */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-on-surface/50">Display Label</label>
+                  <input
+                    className="w-full bg-surface-container p-2.5 rounded-lg border border-outline-variant/10 text-xs font-mono text-on-surface focus:outline-none focus:border-primary/50"
+                    value={selected.label}
+                    onChange={e => updateNode('label', e.target.value)}
+                  />
+                </div>
+
+                {/* IP */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-on-surface/50">IP Address</label>
+                  <input
+                    className="w-full bg-surface-container p-2.5 rounded-lg border border-outline-variant/10 text-xs font-mono text-on-surface focus:outline-none focus:border-primary/50"
+                    value={selected.ip}
+                    onChange={e => updateNode('ip', e.target.value)}
+                    placeholder="10.0.1.10"
+                  />
+                </div>
+
+                {/* OS + Ports */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-on-surface/50">OS</label>
+                    <select
+                      className="w-full bg-surface-container p-2.5 rounded-lg border border-outline-variant/10 text-xs font-mono text-on-surface focus:outline-none"
+                      value={selected.os}
+                      onChange={e => updateNode('os', e.target.value)}
+                    >
+                      <option>Linux</option>
+                      <option>Windows</option>
+                      <option>Unknown</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-on-surface/50">Ports</label>
+                    <input
+                      className="w-full bg-surface-container p-2.5 rounded-lg border border-outline-variant/10 text-xs font-mono text-on-surface focus:outline-none"
+                      value={selected.ports}
+                      onChange={e => updateNode('ports', e.target.value)}
+                      placeholder="22, 80"
+                    />
                   </div>
                 </div>
 
-                <div className="pt-4 mt-6 border-t border-outline-variant/10">
-                  <button
-                    onClick={() => {
-                      setNodes(nodes.filter(n => n.id !== selectedNode.id));
-                      setSelectedNode(null);
-                    }}
-                    className="w-full py-2 bg-secondary/10 hover:bg-secondary/20 text-secondary border border-secondary/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors"
-                  >
-                    Remove Node
-                  </button>
+                {/* Access Level */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-on-surface/50">Access Level</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['exploitable', 'patched', 'honeypot'] as const).map(level => (
+                      <button
+                        key={level}
+                        onClick={() => updateNode('accessLevel', level)}
+                        className={`py-2 rounded-lg border text-[9px] font-black uppercase transition-all ${selected.accessLevel === level
+                            ? level === 'exploitable' ? 'bg-secondary/20 border-secondary text-secondary'
+                              : level === 'patched' ? 'bg-green-500/20 border-green-500 text-green-400'
+                                : 'bg-yellow-400/20 border-yellow-400 text-yellow-300'
+                            : 'border-outline-variant/10 text-on-surface/30 hover:bg-surface-container-high'
+                          }`}
+                      >
+                        {level}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+
+                {/* Security Score */}
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-on-surface/50 flex justify-between">
+                    Security Score <span className={`font-black text-xs ${selected.securityScore < 40 ? 'text-secondary' : selected.securityScore < 70 ? 'text-yellow-400' : 'text-green-400'}`}>{selected.securityScore}/100</span>
+                  </label>
+                  <input type="range" min="0" max="100"
+                    value={selected.securityScore}
+                    onChange={e => updateNode('securityScore', parseInt(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                </div>
+
+                {/* Vulnerabilities */}
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-on-surface/50 flex items-center gap-1">
+                    <Bug size={10} /> Known Vulnerabilities
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {VULN_OPTIONS.map(v => (
+                      <button
+                        key={v}
+                        onClick={() => {
+                          const current = selected.vulns.includes(v)
+                            ? selected.vulns.filter(x => x !== v)
+                            : [...selected.vulns, v];
+                          updateNode('vulns', current);
+                        }}
+                        className={`px-2 py-1 rounded text-[9px] font-bold transition-all border ${selected.vulns.includes(v)
+                            ? 'bg-secondary/20 border-secondary text-secondary'
+                            : 'border-outline-variant/10 text-on-surface/40 hover:border-outline-variant/40'
+                          }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Firewall Rules */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-on-surface/50">Firewall Rules</label>
+                  <textarea
+                    className="w-full bg-surface-container p-2.5 rounded-lg border border-outline-variant/10 text-[10px] font-mono text-on-surface focus:outline-none focus:border-primary/50 h-16 resize-none"
+                    placeholder={"DENY 22 FROM 0.0.0.0/0\nALLOW 80 FROM INTERNAL"}
+                    value={selected.firewallRules}
+                    onChange={e => updateNode('firewallRules', e.target.value)}
+                  />
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="p-6 flex flex-col items-center justify-center h-48 text-center opacity-30"
+              >
+                <Info size={32} className="mb-3 text-primary" />
+                <p className="text-[10px] font-bold uppercase tracking-widest">Select a node to configure</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </aside>
     </div>
   );
 };
