@@ -281,10 +281,25 @@ export const BuilderView = () => {
               Click another node to link
             </div>
           )}
-          <Button onClick={handleCommit} disabled={isSaving || nodes.length === 0} className="w-full py-3 text-xs">
-            {isSaving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
-            {saveStatus || 'Save Topology'}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => {
+                setNodes([]);
+                setLinks([]);
+                setSelected(null);
+                setLinking(null);
+              }}
+              disabled={nodes.length === 0}
+              className="px-3 py-3 !bg-secondary/10 hover:!bg-secondary/20 !border-secondary/30 !text-secondary flex-shrink-0"
+              title="Clear Canvas"
+            >
+              <Trash2 size={14} />
+            </Button>
+            <Button onClick={handleCommit} disabled={isSaving || nodes.length === 0} className="flex-1 py-3 text-xs">
+              {isSaving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
+              {saveStatus || 'Save Topology'}
+            </Button>
+          </div>
         </div>
       </aside>
 

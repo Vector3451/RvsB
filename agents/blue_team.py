@@ -138,4 +138,8 @@ class IntelligentBlueAgent:
             "loss": loss,
             "avg_reward": avg_reward,
             "action_log": list(self.action_log),
+            "timeline": list(self.action_log),  # Blue doesn't use a separate timeline array right now, so action_log works
+            "mistakes": mistakes,
+            "strategy_debrief": strategy,
         }
+

@@ -69,8 +69,8 @@ def main():
     time.sleep(2)
     print("\n" + "=" * 50)
     print("  RvsB Platform Running (HF Space Mode)")
-    print("  Dashboard UI →  http://localhost:7860/")
-    print("  API Docs     →  http://localhost:7860/docs")
+    print("  Dashboard UI ->  http://localhost:7860/")
+    print("  API Docs     ->  http://localhost:7860/docs")
     print("=" * 50 + "\n")
 
     webbrowser.open("http://localhost:7860/")
