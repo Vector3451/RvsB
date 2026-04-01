@@ -21,6 +21,8 @@ function formatEta(ms: number): string {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
+import { NodeMap } from '../ui/NodeMap';
+
 export const TrainingView = () => {
   const { state, startTraining, stopTraining, setGlobalModel } = useRvsbApi();
   const [episodes, setEpisodes] = useState(10);
@@ -39,10 +41,12 @@ export const TrainingView = () => {
     return () => clearInterval(id);
   }, [isTraining]);
 
-  // Auto-scroll feed
+  // Auto-scroll feed disabled as per user request to prevent page-level jumpiness
+  /*
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [training.episodes]);
+  */
 
   // ── ETA calculation ────────────────────────────────────────────────────
   let etaMs = 0;
@@ -74,14 +78,15 @@ export const TrainingView = () => {
           <h1 className="font-headline text-4xl font-black italic tracking-tight text-on-surface uppercase">Agent Training Grounds</h1>
         </div>
         {isTraining && (
-          <div className="flex items-center gap-4 bg-primary/10 px-4 py-2 rounded-lg border border-primary/30 animate-pulse">
-            <Activity size={16} className="text-primary" />
-            <span className="text-[10px] font-black text-primary uppercase tracking-widest">
-              PPO Training — Episode {training.currentEpisode}/{training.totalEpisodes}
+          <div className={`flex items-center gap-4 px-4 py-2 rounded-lg border animate-pulse ${training.role === 'red' ? 'bg-secondary/10 border-secondary/30' : 'bg-primary/10 border-primary/30'}`}>
+            <Activity size={16} className={training.role === 'red' ? 'text-secondary' : 'text-primary'} />
+            <span className={`text-[10px] font-black uppercase tracking-widest ${training.role === 'red' ? 'text-secondary' : 'text-primary'}`}>
+              PPO Training [{training.role?.toUpperCase()}] — Episode {training.currentEpisode}/{training.totalEpisodes}
             </span>
           </div>
         )}
       </div>
+
 
       {/* ── Control Panel ──────────────────────────────────────────────── */}
       <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
@@ -105,7 +110,7 @@ export const TrainingView = () => {
                           : 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(0,218,243,0.2)]'
                         : 'border-outline-variant/20 text-on-surface/40 hover:bg-surface-container-high'}`}
                   >
-                    {r} Team
+                    {r === 'red' ? 'Adversary' : 'Defender'}
                   </button>
                 ))}
               </div>
@@ -200,7 +205,8 @@ export const TrainingView = () => {
         <GlassCard className="flex-1 flex flex-col overflow-hidden min-h-[600px]">
           <div className="p-6 border-b border-primary/10 flex justify-between items-center bg-surface-container-low/20">
             <h3 className="text-sm font-black text-on-surface uppercase tracking-[0.25em] font-headline flex items-center gap-3">
-              <History size={16} className="text-primary" /> Training Log
+              <History size={16} className={training.role === 'red' ? 'text-secondary' : 'text-primary'} />
+              Training Log {training.role && `— ${training.role === 'red' ? 'ADVERSARY' : 'DEFENDER'} ROLE`}
             </h3>
             {isTraining && (
               <div className="w-2 h-2 rounded-full bg-primary animate-ping" />
@@ -222,12 +228,14 @@ export const TrainingView = () => {
                   const explorationPct = (ep.exploration_rate * 100).toFixed(1);
                   const isSuccess = ep.avg_reward > 0.3;
 
+                  const teamColor = training.role === 'red' ? 'secondary' : 'primary';
+
                   return (
                     <motion.div
                       key={ep.episode}
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className={`border rounded-xl overflow-hidden transition-all ${isSuccess ? 'border-primary/30' : 'border-secondary/30'}`}
+                      className={`border rounded-xl overflow-hidden transition-all ${training.role === 'red' ? 'border-secondary/30' : 'border-primary/30'}`}
                     >
                       {/* Episode header */}
                       <button
@@ -235,14 +243,14 @@ export const TrainingView = () => {
                         onClick={() => setExpandedEp(isExpanded ? null : ep.episode)}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full ${isSuccess ? 'bg-primary shadow-[0_0_6px_rgba(0,218,243,0.8)]' : 'bg-secondary shadow-[0_0_6px_rgba(255,82,95,0.8)]'}`} />
-                          <Badge className={isSuccess ? 'bg-primary/20 text-primary' : 'bg-secondary/20 text-secondary'}>
+                          <div className={`w-2 h-2 rounded-full ${isSuccess ? (training.role === 'red' ? 'bg-secondary' : 'bg-primary') : 'bg-on-surface/20'} shadow-[0_0_6px_rgba(var(--color-primary),0.8)]`} />
+                          <Badge className={training.role === 'red' ? 'bg-secondary/20 text-secondary' : 'bg-primary/20 text-primary'}>
                             EP #{String(ep.episode).padStart(3, '0')}
                           </Badge>
                           <span className="text-on-surface/40 text-[10px]">Steps: {ep.steps}</span>
                         </div>
                         <div className="flex items-center gap-4">
-                          <span className={`text-sm font-headline font-black italic ${ep.avg_reward >= 0 ? 'text-primary' : 'text-secondary'}`}>
+                          <span className={`text-sm font-headline font-black italic ${training.role === 'red' ? 'text-secondary' : 'text-primary'}`}>
                             {ep.avg_reward >= 0 ? '+' : ''}{ep.avg_reward.toFixed(3)}
                           </span>
                           {isExpanded ? <ChevronUp size={14} className="text-on-surface/40" /> : <ChevronDown size={14} className="text-on-surface/40" />}

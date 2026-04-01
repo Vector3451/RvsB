@@ -2,55 +2,60 @@
 RvsB Environment — Typed contracts (Action, Observation, State).
 These Pydantic models form the OpenEnv spec-compliant API contract.
 """
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-from core.env_server import Action, Observation, State
+from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
 # Actions
 # ---------------------------------------------------------------------------
-@dataclass
-class ReconAction(Action):
+
+class ReconAction(BaseModel):
     """Passive or active service discovery on the simulated network."""
     type: str = "recon"
     target_ip: str = "10.0.0.1"
     scan_intensity: str = "passive"   # 'passive' | 'slow' | 'aggressive'
+    role: str = "red"
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class ExploitAction(Action):
+class ExploitAction(BaseModel):
     """Attempt to exploit a known vulnerability on a target service."""
     type: str = "exploit"
     target_service: str = "ssh"       # 'ssh' | 'http' | 'ftp'
     payload: str = ""
+    role: str = "red"
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class ExfiltrateAction(Action):
+class ExfiltrateAction(BaseModel):
     """Read and exfiltrate a file from the target node."""
     type: str = "exfiltrate"
-    file_path: str = "/root/flag.txt"
-    data: str = ""                    # Agent fills this after gaining access
+    target_service: str = "core"
+    payload: str = ""
+    file_path: str = "/root/sensitive_data.txt"
+    data: str = ""
+    role: str = "red"
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 # Union type for dispatcher
-RvsBAction = ReconAction | ExploitAction | ExfiltrateAction
+RvsBAction = Union[ReconAction, ExploitAction, ExfiltrateAction]
 
 
 # ---------------------------------------------------------------------------
 # Observation
 # ---------------------------------------------------------------------------
-@dataclass
-class RvsBObservation(Observation):
+
+class RvsBObservation(BaseModel):
     """What the agent receives after each step."""
     done: bool = False
     reward: Optional[float] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
     # Network state
-    open_services: List[str] = field(default_factory=list)
+    open_services: List[str] = Field(default_factory=list)
     alert_triggered: bool = False
     alerts_count: int = 0
 
@@ -63,15 +68,16 @@ class RvsBObservation(Observation):
     flag_content: str = ""
 
     # Blue Team info
-    patched_services: List[str] = field(default_factory=list)
+    patched_services: List[str] = Field(default_factory=list)
     intrusion_detected: bool = False
+    total_nodes: int = 5
 
 
 # ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
-@dataclass
-class RvsBState(State):
+
+class RvsBState(BaseModel):
     """Episode-level metadata returned by /state."""
     episode_id: Optional[str] = None
     step_count: int = 0

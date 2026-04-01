@@ -6,6 +6,7 @@ export interface NetworkNode {
     label: string;
     angle: number;
     status: 'open' | 'patched' | 'hidden';
+    discovered?: boolean;
 }
 
 export interface NetworkState {
@@ -30,6 +31,7 @@ export interface FeedItem {
     content: string;
     role?: string;
     data?: any;
+    metadata?: any;
 }
 
 export interface TrainingState {
@@ -68,6 +70,8 @@ export interface ApiState {
     activeTemplate: TemplateConfig | null;
     redAgents: number;
     blueAgents: number;
+    redLogs: FeedItem[];
+    blueLogs: FeedItem[];
 }
 
 class ApiStore {
@@ -83,6 +87,8 @@ class ApiStore {
         activeTemplate: null,
         redAgents: 1,
         blueAgents: 1,
+        redLogs: [],
+        blueLogs: [],
         training: {
             isTraining: false,
             role: null,
@@ -148,9 +154,19 @@ class ApiStore {
                     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
                     type: 'ai',
                     content: `>[${actingRole}] ${payload.data.action}\n> Reward: ${payload.data.reward}\n> Reasoning: ${payload.data.reasoning || '(Standard Policy)'}`,
-                    role: actingRole
+                    metadata: payload.data.metadata
                 };
-                this.setState({ logs: [...this.state.logs, newLog].slice(-100) });
+
+                const role = payload.data.metadata?.role?.toLowerCase();
+                const partial: any = { logs: [...this.state.logs, newLog].slice(-100) };
+
+                if (role === 'red') {
+                    partial.redLogs = [...(this.state.redLogs || []), newLog].slice(-50);
+                } else if (role === 'blue') {
+                    partial.blueLogs = [...(this.state.blueLogs || []), newLog].slice(-50);
+                }
+
+                this.setState(partial);
             } else if (payload.type === 'match_end') {
                 this.setState({ isRunning: false, stats: payload.data });
                 this.eventSource?.close();
@@ -179,6 +195,8 @@ class ApiStore {
                     avgReward: payload.data.avg_reward,
                     episodes: [payload.data, ...this.state.training.episodes].slice(0, 50)
                 });
+            } else if (payload.type === 'network_state') {
+                this.setState({ network: payload.data });
             } else if (payload.type === 'train_end') {
                 this.setTrainingState({ isTraining: false, trainStartTime: null });
                 this.trainSource?.close();
@@ -199,10 +217,16 @@ class ApiStore {
     }
 
 
-    async startMatch(maxSteps: number = 40) {
+    async startMatch(maxSteps: number = 40, taskId?: string) {
         if (this.state.isRunning) return;
-        this.setState({ stats: null, logs: [...this.state.logs, { id: 'start', timestamp: new Date().toLocaleTimeString(), type: 'system', content: 'MATCH INITIATED.' }] });
+        this.setState({ stats: null, logs: [...this.state.logs, { id: 'start', timestamp: new Date().toLocaleTimeString(), type: 'system', content: `MATCH INITIATED [Task: ${taskId || 'General'}]` }] });
         try {
+            const config = this.state.activeTemplate ? { ...this.state.activeTemplate } : {};
+            if (taskId) {
+                // @ts-ignore
+                config.task_id = taskId;
+            }
+
             await fetch(`${this.baseUrl}/api/match/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -213,7 +237,7 @@ class ApiStore {
                     max_steps: maxSteps,
                     red_guidance: this.state.redGuidance,
                     blue_guidance: this.state.blueGuidance,
-                    config: this.state.activeTemplate || undefined,
+                    config: Object.keys(config).length > 0 ? config : undefined,
                     red_agents: this.state.redAgents,
                     blue_agents: this.state.blueAgents,
                 }),
@@ -224,7 +248,15 @@ class ApiStore {
 
     async startTraining(role: 'red' | 'blue', episodes: number = 10, model: string = 'dolphin-llama3:latest', guidance: string = '') {
         if (this.state.training.isTraining) return;
-        // Connect SSE FIRST so no events are missed after the server starts
+        // Clear previous training state immediately to avoid UI desync
+        this.setTrainingState({
+            isTraining: true,
+            role: role,
+            episodes: [],
+            currentEpisode: 0,
+            trainStartTime: Date.now()
+        });
+        // Connect SSE
         this.connectTrainingStream();
         try {
             await fetch(`${this.baseUrl}/api/train/${role}`, {
@@ -271,6 +303,7 @@ class ApiStore {
                 label: template.services[svcId]?.label || svcId.toUpperCase(),
                 angle: i * (360 / serviceKeys.length),
                 status: template.exploitable?.includes(svcId) ? 'open' as const : 'patched' as const,
+                discovered: true
             }));
             this.setState({
                 network: {
@@ -288,8 +321,36 @@ class ApiStore {
         }
     }
 
+    randomizeMap(count: number = 5) {
+        const allServices = ['ssh', 'http', 'ftp', 'smb', 'rdp', 'sql', 'nfs'];
+        const selected: string[] = [];
+        for (let i = 0; i < count; i++) {
+            const baseType = allServices[Math.floor(Math.random() * allServices.length)];
+            // unique ID for each generated service
+            selected.push(`${baseType}_${i}_${Math.floor(Math.random() * 999)}`);
+        }
+
+        // Make roughly 30% of nodes exploitable (min 1)
+        const numExploitable = Math.max(1, Math.floor(count * 0.3));
+        const exploitable = [...selected].sort(() => 0.5 - Math.random()).slice(0, numExploitable);
+
+        const servicesRecord: Record<string, any> = {};
+        selected.forEach((s) => {
+            const baseLabel = s.split('_')[0].toUpperCase();
+            servicesRecord[s] = { label: baseLabel };
+        });
+
+        const template: TemplateConfig = {
+            name: "Rand_Config_" + Math.floor(Math.random() * 9999),
+            services: servicesRecord,
+            exploitable: exploitable
+        };
+
+        this.setActiveTemplate(template);
+    }
+
     setRedAgents(n: number) { this.setState({ redAgents: Math.max(1, Math.min(5, n)) }); }
-    setBlueAgents(n: number) { this.setState({ blueAgents: Math.max(1, Math.min(5, n)) }); }
+    setBlueAgents(n: number) { this.setState({ blueAgents: Math.max(0, Math.min(5, n)) }); }
 }
 
 export const apiStore = new ApiStore();
@@ -308,7 +369,7 @@ export function useRvsbApi() {
 
     return {
         state,
-        startMatch: apiStore.startMatch.bind(apiStore),
+        startMatch: (steps?: number, tid?: string) => apiStore.startMatch(steps, tid),
         stopMatch: apiStore.stopMatch.bind(apiStore),
         startTraining: apiStore.startTraining.bind(apiStore),
         stopTraining: apiStore.stopTraining.bind(apiStore),
@@ -316,6 +377,7 @@ export function useRvsbApi() {
         setGlobalModel: apiStore.setGlobalModel.bind(apiStore),
         fetchModels: apiStore.fetchModels.bind(apiStore),
         setActiveTemplate: apiStore.setActiveTemplate.bind(apiStore),
+        randomizeMap: (count?: number) => apiStore.randomizeMap(count),
         setRedAgents: apiStore.setRedAgents.bind(apiStore),
         setBlueAgents: apiStore.setBlueAgents.bind(apiStore),
     };

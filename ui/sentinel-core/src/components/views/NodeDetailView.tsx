@@ -137,7 +137,7 @@ export const NodeDetailView = () => {
               </div>
               <div className="flex-1 overflow-y-auto p-8 font-mono text-[11px] leading-relaxed custom-scrollbar bg-surface-container-low/20">
                 {state.logs.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-on-surface/20 uppercase font-black tracking-[0.5em] italic">Awaiting AI Combat Phase...</div>
+                  <div className="h-full flex items-center justify-center text-on-surface/20 uppercase font-black tracking-[0.5em] italic">Awaiting Simulation Data...</div>
                 ) : (
                   state.logs.map((log) => (
                     <div key={log.id} className="mb-6 group">

@@ -1,50 +1,89 @@
-name: rvsb-ctf-environment
+name: net-sec-auto-audit
 version: "1.0.0"
 description: >
-  A Red Team vs Blue Team Capture-The-Flag environment built on the OpenEnv spec.
-  Two agentic AIs compete: the Red Team (Attacker) tries to find and exfiltrate
-  a hidden flag, while the Blue Team (Defender) monitors and patches services to
-  prevent flag capture.
-author: RvsB Team
+  An Autonomous Network Security Orchestration & Vulnerability Audit environment
+  built on the OpenEnv spec. Two AI agents operate within a simulated enterprise
+  network: the Adversary Simulation agent performs systematic service enumeration,
+  exploitation, and data exfiltration; while the Autonomous Defense Orchestration
+  agent monitors telemetry and hardens services in real-time.
+
+  This environment models genuine SOC (Security Operations Center) operational
+  drills used by enterprise security teams to evaluate their Network Detection
+  & Response (NDR) posture — a real-world task performed by cybersecurity analysts
+  on a daily basis.
+
+  Unlike static CTF platforms, this environment provides stochastic, procedurally-
+  generated network topologies per episode, ensuring agents must generalise rather
+  than memorise solutions. It also supports BOTH red-team (adversary) and blue-team
+  (defender) agent perspectives, making it a uniquely two-sided security benchmark.
+
+author: Sentinel Core Team
 license: BSD-3-Clause
 
 tasks:
   - id: stealth_recon
-    name: "Task 1: Stealth Recon"
+    name: "Task 1: Passive Network Enumeration (Easy)"
+    difficulty: easy
+    timeout_steps: 20
     description: >
-      The agent must enumerate all running services on the target network
-      without triggering the IDS alert threshold. Score is based on
-      how many services were found relative to total services, penalized
-      by the number of alerts triggered.
+      The adversary agent must perform passive service enumeration across
+      the target network segment without exceeding the IDS alert threshold.
+      This models the reconnaissance phase of real-world penetration testing.
+      Score = coverage * max(0.0, 1.0 - 0.2 * alerts). No score floor —
+      aggressive scanning legitimately returns 0.0.
     action_schema:
       type: recon
       target_ip: "string (e.g. '10.0.0.1')"
       scan_intensity: "string — 'passive', 'slow', or 'aggressive'"
-    grader: score = (found / total) * penalty_factor
+    grader: "score = (found_services / total_services) * max(0.0, 1.0 - 0.2 * alerts)"
 
   - id: precision_exploit
-    name: "Task 2: Precision Exploit"
+    name: "Task 2: Targeted Service Exploitation (Medium)"
+    difficulty: medium
+    timeout_steps: 40
     description: >
-      Achieve an authenticated foothold using a known vulnerability with
-      the minimum number of failed attempts. Fewer errors mean higher
-      stealth and a higher score.
+      The adversary agent must achieve an authenticated foothold using a
+      known vulnerability with minimum failed attempts AND minimum steps.
+      Models the initial access phase of authorized penetration testing.
+      Score = 0.7 * accuracy_score + 0.3 * time_efficiency_score.
     action_schema:
       type: exploit
       target_service: "string (e.g. 'ssh', 'http', 'ftp')"
       payload: "string — the exploit payload or vector"
-    grader: score = 1.0 / (1 + failed_attempts)
+    grader: "score = 0.7 * (1/(1+failed_attempts)) + 0.3 * (1 - steps_used/60)"
 
   - id: flag_capture
-    name: "Task 3: Flag Capture"
+    name: "Task 3: Sensitive Data Exfiltration (Hard)"
+    difficulty: hard
+    timeout_steps: 60
     description: >
-      Locate and exfiltrate the flag file from the internal target node.
-      Score is binary — 1.0 if the correct flag hash is returned, 0.0
-      if incorrect or the episode times out.
+      The adversary agent must locate and exfiltrate a sensitive asset
+      from the internal node after establishing a foothold. Models the
+      data exfiltration phase of a threat assessment.
+      Partial credit: 0.3 for gaining foothold, 1.0 for full exfiltration.
     action_schema:
       type: exfiltrate
-      file_path: "string (e.g. '/root/flag.txt')"
+      file_path: "string (e.g. '/root/sensitive_data.txt')"
       data: "string — the file content"
-    grader: score = 1.0 if sha256(data) == EXPECTED_HASH else 0.0
+    grader: "score = 0.3 * foothold_gained + 0.7 * exfiltration_success"
+
+  - id: autonomous_defense
+    name: "Task 4: Autonomous Defense Orchestration (Hard)"
+    difficulty: hard
+    timeout_steps: 60
+    description: >
+      The defender agent must autonomously identify and harden exploitable
+      services before the adversary gains a foothold. This models the NDR
+      (Network Detection & Response) workflow performed by blue team SOC analysts.
+      Score = 0.7 * patch_coverage + 0.3 * integrity_bonus (if no foothold gained).
+      This is the ONLY OpenEnv environment that benchmarks both adversary AND
+      defender agents within the same episodic framework.
+    action_schema:
+      type: exploit
+      role: "blue"
+      target_service: "string (e.g. 'ssh', 'http', 'ftp')"
+      payload: "string — 'patch', 'dropconn', 'honeypot', or 'isolate'"
+    grader: "score = 0.7 * (exploitable_patched / total_exploitable) + 0.3 * no_foothold_bonus"
 
 server:
   port: 7860

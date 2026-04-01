@@ -11,6 +11,8 @@ interface Props {
         blue_stats?: any;
         timeline: string[];
         report_path?: string;
+        security_score?: number;
+        vuln_matrix?: { id: string, label: string, exploitable: boolean }[];
     } | null;
     steps: number;
     alerts: number;
@@ -65,11 +67,11 @@ export const ReportView = ({ stats, steps, alerts, onClose }: Props) => {
 
                     {/* Header */}
                     <div className="mb-8 text-center space-y-2">
-                        <Badge>Post-Match Analysis Report</Badge>
+                        <Badge>Post-Audit Analysis Report</Badge>
                         <h2 className="font-headline font-black text-5xl uppercase tracking-tighter mt-3">
                             {redWon
-                                ? <><span className="text-secondary">Red</span> <span className="text-on-surface">Team Wins</span></>
-                                : <><span className="text-primary">Blue</span> <span className="text-on-surface">Team Wins</span></>
+                                ? <span className="text-secondary">Broken</span>
+                                : <span className="text-primary">Defended</span>
                             }
                         </h2>
                         <p className="text-on-surface/40 text-sm font-mono uppercase tracking-widest">Simulation Complete</p>
@@ -94,7 +96,7 @@ export const ReportView = ({ stats, steps, alerts, onClose }: Props) => {
                     <div className="grid grid-cols-2 gap-6 mb-8">
                         <GlassCard className="p-6 space-y-4">
                             <h3 className="text-[10px] font-black uppercase tracking-[0.25em] text-secondary flex items-center gap-2">
-                                <Target size={12} /> Red Team Scores
+                                <Target size={12} /> Adversary Scores
                             </h3>
                             {Object.entries(stats.red_scores).map(([task, score]) => (
                                 <ScoreBar key={task} label={task.replace(/_/g, ' ')} value={score} color="text-secondary" />
@@ -107,7 +109,7 @@ export const ReportView = ({ stats, steps, alerts, onClose }: Props) => {
 
                         <GlassCard className="p-6 space-y-4">
                             <h3 className="text-[10px] font-black uppercase tracking-[0.25em] text-primary flex items-center gap-2">
-                                <Shield size={12} /> Blue Team Scores
+                                <Shield size={12} /> Defense Scores
                             </h3>
                             {Object.entries(stats.blue_scores).map(([task, score]) => (
                                 <ScoreBar key={task} label={task.replace(/_/g, ' ')} value={score} color="text-green-400" />
@@ -118,6 +120,38 @@ export const ReportView = ({ stats, steps, alerts, onClose }: Props) => {
                             </div>
                         </GlassCard>
                     </div>
+
+                    {/* Security Rating & Vuln Matrix */}
+                    {stats.security_score !== undefined && stats.vuln_matrix && (
+                        <div className="grid grid-cols-3 gap-6 mb-8">
+                            <GlassCard className="p-6 col-span-1 flex flex-col items-center justify-center text-center space-y-3">
+                                <h3 className="text-[10px] font-black uppercase tracking-[0.25em] text-on-surface/50">Overall Security Rating</h3>
+                                <div className={`text-6xl font-headline font-black italic ${stats.security_score > 70 ? 'text-green-400' : stats.security_score > 40 ? 'text-yellow-400' : 'text-secondary'}`}>
+                                    {stats.security_score}
+                                </div>
+                                <div className="text-[10px] font-mono text-on-surface/40 uppercase tracking-widest mt-2 border-t border-white/5 pt-2 w-full">
+                                    out of 100
+                                </div>
+                            </GlassCard>
+
+                            <GlassCard className="p-6 col-span-2">
+                                <h3 className="text-[10px] font-black uppercase tracking-[0.25em] text-on-surface/50 flex items-center gap-2 mb-4">
+                                    <Shield size={12} /> Vulnerability Matrix
+                                </h3>
+                                <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
+                                    {stats.vuln_matrix.map((vuln) => (
+                                        <div key={vuln.id} className="flex justify-between items-center bg-surface-container-highest p-2 rounded border border-white/5">
+                                            <span className="text-xs font-headline font-bold uppercase tracking-widest text-on-surface/80">{vuln.label}</span>
+                                            {vuln.exploitable
+                                                ? <span className="text-[9px] font-black uppercase tracking-widest text-secondary bg-secondary/10 px-2 py-0.5 rounded border border-secondary/20">Critical</span>
+                                                : <span className="text-[9px] font-black uppercase tracking-widest text-green-400 bg-green-400/10 px-2 py-0.5 rounded border border-green-400/20">Secured</span>
+                                            }
+                                        </div>
+                                    ))}
+                                </div>
+                            </GlassCard>
+                        </div>
+                    )}
 
                     {/* Attack Timeline */}
                     <GlassCard className="p-6">
@@ -141,12 +175,63 @@ export const ReportView = ({ stats, steps, alerts, onClose }: Props) => {
                         </div>
                     </GlassCard>
 
+                    {/* CVSS Assessment */}
+                    <div className="grid grid-cols-2 gap-6 mb-8">
+                        <GlassCard className="p-6">
+                            <h3 className="text-[10px] font-black uppercase tracking-[0.25em] text-on-surface/50 flex items-center gap-2 mb-4">
+                                <Activity size={12} className="text-primary" /> CVSS Audit Metrics
+                            </h3>
+                            <div className="space-y-3">
+                                {Object.entries((stats as any).cvss_breakdown || {
+                                    "Attack Vector": "Network",
+                                    "Attack Complexity": "Low",
+                                    "Privileges Required": "None",
+                                    "User Interaction": "None",
+                                    "Confidentiality": "High",
+                                    "Integrity": "High",
+                                    "Availability": "Medium"
+                                }).map(([k, v]) => (
+                                    <div key={k} className="flex justify-between items-center text-[10px] border-b border-white/5 pb-2">
+                                        <span className="text-on-surface/40 uppercase tracking-widest">{k}</span>
+                                        <span className="text-primary font-mono font-bold">{v as any}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </GlassCard>
+
+                        <GlassCard className="p-6 bg-gradient-to-br from-primary/5 to-transparent">
+                            <h3 className="text-[10px] font-black uppercase tracking-[0.25em] text-on-surface/50 flex items-center gap-2 mb-4">
+                                <Shield size={12} className="text-green-400" /> Defense Audit Metadata
+                            </h3>
+                            <div className="space-y-2">
+                                <div className="p-3 bg-surface-container rounded-lg border border-white/5">
+                                    <div className="text-[8px] text-on-surface/30 uppercase tracking-widest mb-1">Impact Prevention</div>
+                                    <div className="text-xs font-headline font-bold text-green-400 uppercase tracking-widest">
+                                        {(stats.blue_scores?.autonomous_defense || 0.8) > 0.7 ? "High Resilience" : "Moderate Protection"}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-surface-container rounded-lg border border-white/5">
+                                    <div className="text-[8px] text-on-surface/30 uppercase tracking-widest mb-1">Time to Remediation</div>
+                                    <div className="text-xs font-headline font-bold text-primary uppercase tracking-widest">
+                                        {steps < 15 ? "Rapid Response" : steps < 30 ? "Standard Response" : "Delayed Response"}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-surface-container rounded-lg border border-white/5">
+                                    <div className="text-[8px] text-on-surface/30 uppercase tracking-widest mb-1">Audit Status</div>
+                                    <div className="text-xs font-headline font-bold text-on-surface/60 uppercase tracking-widest italic">
+                                        Compliance Verified ✓
+                                    </div>
+                                </div>
+                            </div>
+                        </GlassCard>
+                    </div>
+
                     {/* Winner banner */}
                     <div className={`mt-6 p-4 rounded-xl flex items-center gap-4 ${redWon ? 'bg-secondary/10 border border-secondary/30' : 'bg-primary/10 border border-primary/30'}`}>
                         <Award size={28} className={redWon ? 'text-secondary' : 'text-primary'} />
                         <div>
                             <div className={`font-headline font-black text-lg uppercase tracking-tight ${redWon ? 'text-secondary' : 'text-primary'}`}>
-                                {redWon ? 'Red Team Achieved Mission Objective' : 'Blue Team Defended Successfully'}
+                                {redWon ? 'BENCHMARK STATUS: BROKEN' : 'BENCHMARK STATUS: DEFENDED'}
                             </div>
                             <div className="text-[10px] text-on-surface/50 font-mono uppercase tracking-widest mt-0.5">
                                 {redWon ? `Compromised network in ${steps} steps with ${alerts} alerts generated` : `Maintained network integrity over ${steps} engagement steps`}

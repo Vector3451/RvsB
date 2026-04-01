@@ -60,7 +60,11 @@ def main():
     run(
         [sys.executable, "-m", "uvicorn",
          "envs.rvsb_env.server.app:app",
-         "--host", "0.0.0.0", "--port", "7860", "--reload"],
+         "--host", "0.0.0.0", "--port", "7860", "--reload",
+         "--reload-dir", str(ROOT / "src"),
+         "--reload-dir", str(ROOT / "agents"),
+         "--reload-dir", str(ROOT / "api"),
+        ],
         cwd=ROOT / "src",
         env=src_env,
         label="Server",

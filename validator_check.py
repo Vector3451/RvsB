@@ -20,7 +20,7 @@ def check(label: str, condition: bool, detail: str = "") -> bool:
     icon = PASS if condition else FAIL
     msg = f"{icon} {label}"
     if detail and not condition:
-        msg += f"\n   ↳ {detail}"
+        msg += f"\n   -> {detail}"
     print(msg)
     return condition
 

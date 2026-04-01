@@ -28,8 +28,22 @@ from agents.rl.ppo_agent import (
 
 _BASE_URL = "http://localhost:7860"
 
+
+def color_print(role: str, msg: str):
+    """Helper for pretty terminal logging."""
+    colors = {
+        "red": "\033[91m",
+        "blue": "\033[94m",
+        "system": "\033[93m",
+        "success": "\033[92m",
+        "reset": "\033[0m"
+    }
+    prefix = f"[{role.upper()}] "
+    c = colors.get(role.lower(), colors["reset"])
+    print(f"{c}{prefix}{msg}{colors['reset']}")
+
 # Blue Team action mask — defenders don't exploit, they patch and monitor
-BLUE_VALID_ACTIONS = {0, 1, 6, 7, 8, 9}  # scan-passive, scan-slow, patch-*, monitor
+BLUE_VALID_ACTIONS = set(range(22, 40))  # Patching (22-28), Active Defense (29-32), Monitoring (33-39)
 
 def _blue_reward(obs: Dict, prev_obs: Dict) -> float:
     """
@@ -66,6 +80,8 @@ class IntelligentBlueAgent:
         self._llm_available = llm.is_available()
         self.action_log: List[str] = []
         self.session = requests.Session()
+        import uuid
+        self.session.headers.update({"x-session-id": str(uuid.uuid4())})
 
     def _post(self, path: str, body: Optional[Dict] = None) -> Dict:
         r = self.session.post(f"{self.env_url}{path}", json=body or {}, timeout=10)
@@ -79,7 +95,7 @@ class IntelligentBlueAgent:
 
     def run_episode(self, user_guidance: str = "") -> Dict[str, Any]:
         """Run one defence episode. Returns own stats (not competing scores)."""
-        obs = self._post("/reset")
+        obs = self._post("/reset", {"config": {"training": True}})
         self.action_log = []
         trajectory = []
         mistakes = []
@@ -94,9 +110,10 @@ class IntelligentBlueAgent:
 
             # Restrict Blue Team to defensive actions only
             if action_idx not in BLUE_VALID_ACTIONS:
-                action_idx = 9  # fallback: monitor
+                action_idx = 33  # fallback: monitor
 
             action_dict = dict(ACTION_MAP[action_idx])
+            action_dict["role"] = "blue"
             action_name = ACTION_NAMES[action_idx]
 
             reasoning = ""
@@ -105,6 +122,11 @@ class IntelligentBlueAgent:
 
             obs = self._post("/step", action_dict)
             reward = _blue_reward(obs, prev_obs)
+
+            # Terminal Logging (Simplified)
+            color_print("blue", f"Step {step+1}: {action_name} -> Reward: {reward:.3f}")
+            if "console" in obs.get("metadata", {}):
+                print(f"      \033[90m> {obs['metadata']['console']}\033[0m")
 
             if reward < 0:
                 mistakes.append(f"Step {step+1}: {action_name} left attacker unchecked (reward={reward:.2f})")
@@ -131,6 +153,11 @@ class IntelligentBlueAgent:
 
         mem.save_episode("blue", self.policy.episode_count, scores, mistakes,
                          strategy, avg_reward)
+
+        # Summary
+        print("-" * 40)
+        color_print("success", f"EPISODE {self.policy.episode_count} COMPLETE | Avg Reward: {avg_reward:.3f}")
+        print("-" * 40)
 
         return {
             "scores": scores,

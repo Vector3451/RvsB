@@ -145,6 +145,22 @@ def _run_training_thread(role: str, episodes: int, env_url: str, model: str, gui
             # Extract reasoning/strategy safely
             strategy = result.get("strategy_debrief", "")
             
+            # Ground the summary in real service discovery
+            found = result.get("found_services", [])
+            
+            # Emit network state for the training map
+            network_data = {
+                "step": len(result["timeline"]),
+                "nodes": [
+                    {"id": s, "label": s, "status": "patched" if s in result.get("patched", []) else "open"}
+                    for s in ["ssh", "http", "ftp", "smb", "rdp"]
+                ],
+                "alerts": result.get("alerts", 0),
+                "foothold": result.get("foothold", False),
+                "flag_captured": result.get("flag_found", False),
+            }
+            emit("network_state", network_data)
+
             emit("episode_done", {
                 "episode": i + 1,
                 "total_episodes": episodes,
@@ -154,6 +170,7 @@ def _run_training_thread(role: str, episodes: int, env_url: str, model: str, gui
                 "exploration_rate": agent.policy.epsilon,
                 "strategy": strategy,
                 "mistakes": len(result.get("mistakes", [])),
+                "metadata": {"console": result.get("timeline", [""])[-1]} # Pass last log as console activity
             })
     except Exception as e:
         emit("error", {"message": str(e)})

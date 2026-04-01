@@ -24,26 +24,84 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 STATE_DIM = 9
-ACTION_DIM = 10
+ACTION_DIM = 40
 ACTION_NAMES = [
+    # Recon (0-2)
     "scan-passive", "scan-slow", "scan-aggressive",
-    "exploit-http", "exploit-ssh", "exploit-ftp",
+    # Exploits (3-16)
+    "exploit-http-sqli", "exploit-http-rce", 
+    "exploit-ssh-brute", "exploit-ssh-keyleak",
+    "exploit-ftp-anon", "exploit-ftp-bounce",
+    "exploit-smb-eternalblue", "exploit-smb-guess",
+    "exploit-rdp-brute", "exploit-rdp-bluekeep",
+    "exploit-sql-inject", "exploit-sql-creds",
+    "exploit-nfs-mount", "exploit-nfs-suid",
+    # Post-Exploitation / Exfil (17-21)
+    "exfil-passwd", "exfil-sam", "exfil-db",
+    "backdoor-ssh", "clear-logs",
+    # Blue Defense (Patching) (22-28)
     "patch-http", "patch-ssh", "patch-ftp",
-    "monitor",
+    "patch-smb", "patch-rdp", "patch-sql", "patch-nfs",
+    # Blue Active Defense (29-32)
+    "defend-drop-conn", "defend-honeypot", "defend-restart", "defend-isolate",
+    # Blue Monitoring (33-39)
+    "monitor-netstat", "monitor-logs-http", "monitor-logs-ssh",
+    "monitor-logs-ftp", "monitor-logs-smb", "monitor-logs-rdp", "monitor-logs-sql"
 ]
 
 # Maps action index → environment action dict
 ACTION_MAP = {
+    # Recon
     0: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "passive"},
     1: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "slow"},
     2: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "aggressive"},
-    3: {"type": "exploit", "target_service": "http", "payload": "sqli: ' OR 1=1 --"},
-    4: {"type": "exploit", "target_service": "ssh",  "payload": "brute: admin/admin"},
-    5: {"type": "exploit", "target_service": "ftp",  "payload": "anon_login: USER anonymous"},
-    6: {"type": "exploit", "target_service": "http", "payload": "PATCH:http"},
-    7: {"type": "exploit", "target_service": "ssh",  "payload": "PATCH:ssh"},
-    8: {"type": "exploit", "target_service": "ftp",  "payload": "PATCH:ftp"},
-    9: {"type": "recon",   "target_ip": "10.0.0.1", "scan_intensity": "passive"},
+    
+    # Exploits
+    3: {"type": "exploit", "target_service": "http", "payload": "sqli"},
+    4: {"type": "exploit", "target_service": "http", "payload": "rce"},
+    5: {"type": "exploit", "target_service": "ssh",  "payload": "bruteforce"},
+    6: {"type": "exploit", "target_service": "ssh",  "payload": "keyleak"},
+    7: {"type": "exploit", "target_service": "ftp",  "payload": "anonymous"},
+    8: {"type": "exploit", "target_service": "ftp",  "payload": "bounce"},
+    9: {"type": "exploit", "target_service": "smb",  "payload": "eternalblue"},
+    10: {"type": "exploit", "target_service": "smb", "payload": "guess"},
+    11: {"type": "exploit", "target_service": "rdp", "payload": "bruteforce"},
+    12: {"type": "exploit", "target_service": "rdp", "payload": "bluekeep"},
+    13: {"type": "exploit", "target_service": "sql", "payload": "sqli"},
+    14: {"type": "exploit", "target_service": "sql", "payload": "defaultcreds"},
+    15: {"type": "exploit", "target_service": "nfs", "payload": "mount"},
+    16: {"type": "exploit", "target_service": "nfs", "payload": "suid"},
+    
+    # Post-Exploitation
+    17: {"type": "exfiltrate", "target_service": "core", "payload": "passwd"},
+    18: {"type": "exfiltrate", "target_service": "core", "payload": "sam"},
+    19: {"type": "exfiltrate", "target_service": "core", "payload": "db"},
+    20: {"type": "exfiltrate", "target_service": "core", "payload": "backdoor"},
+    21: {"type": "exfiltrate", "target_service": "core", "payload": "clearlogs"},
+    
+    # Blue Patching
+    22: {"type": "exploit", "target_service": "http", "payload": "patch"},
+    23: {"type": "exploit", "target_service": "ssh",  "payload": "patch"},
+    24: {"type": "exploit", "target_service": "ftp",  "payload": "patch"},
+    25: {"type": "exploit", "target_service": "smb",  "payload": "patch"},
+    26: {"type": "exploit", "target_service": "rdp",  "payload": "patch"},
+    27: {"type": "exploit", "target_service": "sql",  "payload": "patch"},
+    28: {"type": "exploit", "target_service": "nfs",  "payload": "patch"},
+    
+    # Blue Active Defense
+    29: {"type": "exploit", "target_service": "core", "payload": "dropconn"},
+    30: {"type": "exploit", "target_service": "core", "payload": "honeypot"},
+    31: {"type": "exploit", "target_service": "core", "payload": "restart"},
+    32: {"type": "exploit", "target_service": "core", "payload": "isolate"},
+    
+    # Blue Monitoring
+    33: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "passive"}, # netstat alias
+    34: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "slow"},    # logs-http
+    35: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "slow"},    # logs-ssh
+    36: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "slow"},    # logs-ftp
+    37: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "slow"},    # logs-smb
+    38: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "slow"},    # logs-rdp
+    39: {"type": "recon", "target_ip": "10.0.0.1", "scan_intensity": "slow"},    # logs-sql
 }
 
 
@@ -56,14 +114,16 @@ def _encode_obs(obs: Dict, step: int, role: str) -> np.ndarray:
     """Convert env observation dict to a fixed-length feature vector."""
     open_svc = obs.get("open_services", [])
     patched  = obs.get("patched_services", [])
+    total    = float(obs.get("total_nodes", 5))
+    
     return np.array([
-        len(open_svc) / 5.0,
+        len(open_svc) / total,
         min(obs.get("alerts_count", 0), 10) / 10.0,
         float(obs.get("foothold_gained", False)),
         float(obs.get("flag_found", False)),
         min(obs.get("failed_attempts", 0), 10) / 10.0,
         step / 60.0,
-        len(patched) / 5.0,
+        len(patched) / total,
         obs.get("time_remaining", 60) / 60.0,
         1.0 if role == "red" else 0.0,
     ], dtype=np.float32)
@@ -76,11 +136,14 @@ class PPOPolicy:
     """
 
     def __init__(self, role: str, lr: float = 0.05, gamma: float = 0.95,
-                 epsilon: float = 0.3, save_path: Optional[str] = None):
+                 epsilon: float = 0.3, save_path: Optional[str] = None, seed: Optional[int] = None):
         self.role = role
         self.lr = lr
         self.gamma = gamma
         self.epsilon = epsilon   # exploration rate
+        
+        self.rng = random.Random(seed)
+        self.np_rng = np.random.RandomState(seed)
 
         # Linear weight matrix: W[action, state_dim]
         self.W = np.zeros((ACTION_DIM, STATE_DIM), dtype=np.float32)
@@ -105,10 +168,10 @@ class PPOPolicy:
         probs = self.action_probs(state)
         # Decay exploration over episodes
         eps = max(0.05, self.epsilon * math.exp(-self.episode_count / 200))
-        if random.random() < eps:
-            idx = random.randrange(ACTION_DIM)
+        if self.rng.random() < eps:
+            idx = self.rng.randrange(ACTION_DIM)
         else:
-            idx = int(np.random.choice(ACTION_DIM, p=probs))
+            idx = int(self.np_rng.choice(ACTION_DIM, p=probs))
         return idx, probs
 
     # ------------------------------------------------------------------
@@ -170,7 +233,12 @@ class PPOPolicy:
         try:
             with open(self.save_path) as f:
                 data = json.load(f)
-            self.W = np.array(data["W"], dtype=np.float32)
+            loaded_W = np.array(data["W"], dtype=np.float32)
+            # Validate dimensions — if saved from an old action space, discard
+            if loaded_W.shape != (ACTION_DIM, STATE_DIM):
+                print(f"[PPO] Stale policy ({loaded_W.shape}) vs expected ({ACTION_DIM},{STATE_DIM}) — resetting.")
+                return False
+            self.W = loaded_W
             self.episode_count = data.get("episode_count", 0)
             self.total_reward = data.get("total_reward", 0.0)
             self.reward_history = data.get("reward_history", [])

@@ -1,15 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Network, Database, AlertTriangle, Server, Shield, Globe,
   Swords, Target as TargetIcon, Play, Square, ChevronUp, ChevronDown,
-  FileText, Activity, Lock
+  FileText, Lock, Terminal as TerminalIcon, Dices, Download
 } from 'lucide-react';
 import { GlassCard, Badge } from '../ui/CyberComponents';
+import { cn } from '@/src/lib/utils';
 import { useRvsbApi, NetworkNode } from '../../lib/useRvsbApi';
 import { ReportView } from './ReportView';
 
-// ── Node icon helper ──────────────────────────────────────────────────────
+import { NodeMap } from '../ui/NodeMap';
 
 const getIconForNode = (label: string) => {
   const l = label.toLowerCase();
@@ -25,115 +26,59 @@ const getIconForNode = (label: string) => {
 const AgentCounter = ({
   label, color, count, onInc, onDec
 }: { label: string; color: 'red' | 'blue'; count: number; onInc: () => void; onDec: () => void }) => (
-  <div className={`flex flex-col items-center gap-1.5 bg-surface-container-low/60 px-4 py-3 rounded-xl border ${color === 'red' ? 'border-secondary/30' : 'border-primary/30'}`}>
-    <div className={`text-[9px] font-black uppercase tracking-[0.2em] ${color === 'red' ? 'text-secondary' : 'text-primary'}`}>{label}</div>
-    <div className="flex items-center gap-2">
-      <button onClick={onDec} className="w-6 h-6 rounded-lg bg-surface-container-high flex items-center justify-center hover:bg-surface-container-highest transition-all">
-        <ChevronDown size={14} className="text-on-surface/60" />
-      </button>
-      <span className={`text-2xl font-headline font-black italic min-w-[24px] text-center ${color === 'red' ? 'text-secondary' : 'text-primary'}`}>{count}</span>
-      <button onClick={onInc} className="w-6 h-6 rounded-lg bg-surface-container-high flex items-center justify-center hover:bg-surface-container-highest transition-all">
-        <ChevronUp size={14} className="text-on-surface/60" />
-      </button>
+  <div className={`flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-xl border ${color === 'red' ? 'border-secondary/20' : 'border-primary/20'}`}>
+    <div className="flex flex-col">
+      <div className={`text-[7px] font-black uppercase tracking-widest ${color === 'red' ? 'text-secondary' : 'text-primary'} opacity-60 leading-none mb-0.5`}>{label}</div>
+      <div className="text-sm font-black text-on-surface leading-none tracking-tighter">{count}</div>
     </div>
-    <div className="flex gap-1">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className={`w-2 h-2 rounded-full ${color === 'red' ? 'bg-secondary' : 'bg-primary'}`} />
-      ))}
+    <div className="flex flex-col gap-0.5">
+      <button onClick={onInc} className="p-0.5 hover:bg-white/10 rounded-sm transition-colors text-on-surface/40 hover:text-primary"><ChevronUp size={12} /></button>
+      <button onClick={onDec} className="p-0.5 hover:bg-white/10 rounded-sm transition-colors text-on-surface/40 hover:text-secondary"><ChevronDown size={12} /></button>
     </div>
   </div>
 );
 
 // ── Live Action Feed ────────────────────────────────────────────────────
 
-const LiveActionFeed = ({ logs }: { logs: any[] }) => {
-  const feedRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
-  }, [logs]);
-
-  return (
-    <div className="absolute left-6 top-24 bottom-6 w-[400px] max-w-lg z-40 flex flex-col gap-2 pointer-events-auto">
-      <div className="flex items-center gap-2 px-1 mb-1">
-        <Activity size={12} className="text-primary" />
-        <span className="text-[9px] font-black uppercase tracking-[0.25em] text-primary">Live Combat Feed</span>
-        {logs.length > 0 && <div className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />}
-      </div>
-      <div
-        ref={feedRef}
-        className="flex-1 overflow-y-auto space-y-1.5 custom-scrollbar pr-1"
-      >
-        <AnimatePresence initial={false}>
-          {logs.slice(-40).map(log => {
-            const isRed = log.role === 'RED' || log.content?.includes('[RED]');
-            const isBlue = log.role === 'BLUE' || log.content?.includes('[BLUE]');
-            const isSystem = log.type === 'system';
-
-            // Parse content lines for nicer display
-            const lines = (log.content || '').split('\n');
-            const actionLine = lines[0] || '';
-            const rewardLine = lines[1] || '';
-            const reasoning = lines[2] || '';
-
-            return (
-              <motion.div
-                key={log.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className={`p-2.5 rounded-lg border text-[10px] font-mono backdrop-blur-md
-                  ${isRed ? 'bg-secondary/10 border-secondary/30' :
-                    isBlue ? 'bg-primary/10 border-primary/30' :
-                      'bg-surface-container/60 border-outline-variant/10'}`}
-              >
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <div className={`flex items-center gap-1.5 font-black text-[9px] uppercase tracking-widest
-                    ${isRed ? 'text-secondary' : isBlue ? 'text-primary' : 'text-on-surface/40'}`}>
-                    {isRed && <TargetIcon size={9} />}
-                    {isBlue && <Shield size={9} />}
-                    {isRed ? 'Red Attack' : isBlue ? 'Blue Defense' : 'System'}
-                  </div>
-                  <span className="text-on-surface/30 text-[8px] flex-shrink-0">{log.timestamp}</span>
-                </div>
-                {/* Action */}
-                {actionLine && (
-                  <div className={`font-bold break-words whitespace-pre-wrap ${isRed ? 'text-secondary/80' : isBlue ? 'text-primary/80' : 'text-on-surface/60'}`}>
-                    {actionLine.replace(/^\>[^\]]*\]\s*/, '').replace(/^>\[.*?\]\s*/, '')}
-                  </div>
-                )}
-                {/* Reward */}
-                {rewardLine && rewardLine.includes('Reward') && (
-                  <div className="text-on-surface/40 text-[9px] mt-0.5 break-words whitespace-pre-wrap">{rewardLine.replace('>', '').trim()}</div>
-                )}
-                {/* Reasoning */}
-                {reasoning && reasoning.includes('Reasoning') && (
-                  <div className="text-on-surface/30 text-[9px] mt-1 italic break-words whitespace-pre-wrap">
-                    {reasoning.replace('> Reasoning:', '').trim()}
-                  </div>
-                )}
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-        {logs.length === 0 && (
-          <div className="text-[9px] text-on-surface/20 italic text-center py-4">
-            Awaiting agent deployment...
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
 
 // ── Main MapView ─────────────────────────────────────────────────────────
 
 export const MapView = () => {
-  const { state, startMatch, stopMatch, setRedAgents, setBlueAgents } = useRvsbApi();
+  const { state, startMatch, stopMatch, setRedAgents, setBlueAgents, randomizeMap, setActiveTemplate } = useRvsbApi();
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
   const [showReport, setShowReport] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [nodeCount, setNodeCount] = useState(5);
+  const [showImport, setShowImport] = useState(false);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [selectedTask, setSelectedTask] = useState<'stealth_recon' | 'precision_exploit' | 'flag_capture' | 'autonomous_defense'>('stealth_recon');
+
+  const tasks = [
+    { id: 'stealth_recon', label: 'Recon', color: 'primary', steps: 20 },
+    { id: 'precision_exploit', label: 'Exploit', color: 'secondary', steps: 40 },
+    { id: 'flag_capture', label: 'Exfil', color: 'secondary', steps: 60 },
+    { id: 'autonomous_defense', label: 'Defense', color: 'primary', steps: 60 },
+  ];
+
+
+  // Memoize risk score to avoid CPU spiking during high-speed RL render playback
+  const selectedNodeRiskScore = useMemo(() => {
+    if (!selectedNode || selectedNode.status === 'patched') return 0;
+    return 15 + (Math.abs(selectedNode.id.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 80);
+  }, [selectedNode?.id, selectedNode?.status]);
+
+  useEffect(() => {
+    fetch('/api/templates/list')
+      .then(r => r.json())
+      .then(setTemplates)
+      .catch(console.error);
+  }, []);
 
   const nodes = state.network?.nodes || [];
   const radius = 35;
+
+  const lastLogWithConsole = [...state.logs].reverse().find(l => l.metadata?.console);
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-[#080c10]">
@@ -145,20 +90,17 @@ export const MapView = () => {
         <div className="flex items-center gap-4 opacity-5">
           <Swords size={48} className="text-on-surface" />
           <div>
-            <h2 className="font-headline font-black text-5xl text-on-surface tracking-tighter uppercase italic">Test</h2>
+            <h2 className="font-headline font-black text-5xl text-on-surface tracking-tighter uppercase italic">Simulation</h2>
             <h3 className="font-headline font-black text-5xl text-on-surface tracking-tighter -mt-2 uppercase italic">Arena</h3>
           </div>
         </div>
       </div>
 
-      {/* ── Live Action Feed (Left) ──────────────────────────────────────── */}
-      <LiveActionFeed logs={state.logs} />
-
       {/* ── Agent Status Indicators (Top Right) ─────────────────────────── */}
       <div className="absolute top-24 right-12 z-40 space-y-4">
         <div className="flex items-center gap-4 justify-end">
           <div className="text-right">
-            <div className="text-[10px] font-black text-secondary uppercase tracking-[0.2em]">Red Aggressor{state.redAgents > 1 ? ` ×${state.redAgents}` : ''}</div>
+            <div className="text-[10px] font-black text-secondary uppercase tracking-[0.2em]">Red Adversary{state.redAgents > 1 ? ` ×${state.redAgents}` : ''}</div>
             <div className="text-sm font-headline font-bold text-on-surface/60 italic">
               {state.availableModels?.find(m => m.id === state.globalModel)?.name || 'Dolphin Llama 3'}
             </div>
@@ -169,7 +111,7 @@ export const MapView = () => {
         </div>
         <div className="flex items-center gap-4 justify-end">
           <div className="text-right">
-            <div className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Blue Sentinel{state.blueAgents > 1 ? ` ×${state.blueAgents}` : ''}</div>
+            <div className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Blue Defender{state.blueAgents > 1 ? ` ×${state.blueAgents}` : ''}</div>
             <div className="text-sm font-headline font-bold text-on-surface/60 italic">
               {state.availableModels?.find(m => m.id === state.globalModel)?.name || 'Dolphin Llama 3'}
             </div>
@@ -180,52 +122,14 @@ export const MapView = () => {
         </div>
       </div>
 
-      {/* ── Network Nodes ───────────────────────────────────────────────── */}
-      {nodes.map((node) => {
-        const Icon = getIconForNode(node.label);
-        const rad = (node.angle - 90) * (Math.PI / 180);
-        const x = 50 + radius * Math.cos(rad);
-        const y = 50 + radius * Math.sin(rad);
-        const isAttacked = state.network?.attacker_at === node.id;
-        const isPatched = node.status === 'patched';
-        if (node.status === 'hidden') return null;
-
-        let borderColor = 'border-primary/40', bgColor = 'bg-primary/10', glow = 'shadow-[0_0_20px_rgba(0,218,243,0.15)]', iconColor = 'text-primary';
-        if (isAttacked) { borderColor = 'border-secondary/80'; bgColor = 'bg-secondary/20'; glow = 'shadow-[0_0_30px_rgba(255,82,95,0.4)]'; iconColor = 'text-secondary'; }
-        else if (isPatched) { borderColor = 'border-green-500/50'; bgColor = 'bg-green-500/10'; glow = 'shadow-[0_0_20px_rgba(34,197,94,0.2)]'; iconColor = 'text-green-500'; }
-
-        return (
-          <motion.div key={node.id} initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1, left: `${x}%`, top: `${y}%` }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 group cursor-pointer z-10"
-            onClick={() => setSelectedNode(node)}
-          >
-            <div className={`relative w-16 h-16 flex items-center justify-center ${bgColor} border ${borderColor} rounded-lg backdrop-blur-sm group-hover:scale-110 transition-all ${glow}`}>
-              {isAttacked && <div className="absolute -inset-2 border border-secondary/50 rounded-lg animate-ping opacity-50" />}
-              <Icon className={iconColor} size={24} />
-              {/* Status badge */}
-              <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#080c10] ${isAttacked ? 'bg-secondary animate-pulse' : isPatched ? 'bg-green-400' : 'bg-yellow-400'}`} />
-              <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-surface-container-high px-3 py-1.5 rounded text-[10px] uppercase font-black tracking-widest border border-primary/20 text-on-surface z-50 shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
-                {node.label}
-                {isAttacked && <span className="ml-2 text-secondary animate-pulse">⚡ UNDER ATTACK</span>}
-                {isPatched && <span className="ml-2 text-green-400">✓ SECURED</span>}
-              </div>
-            </div>
-            <svg className="absolute w-[200vw] h-[200vh] -left-[100vw] -top-[100vh] pointer-events-none -z-10" style={{ pointerEvents: 'none' }}>
-              <line x1={`${x}%`} y1={`${y}%`} x2="50%" y2="50%"
-                stroke={isAttacked ? "rgba(255, 82, 95, 0.4)" : isPatched ? "rgba(34,197,94,0.3)" : "rgba(0, 218, 243, 0.2)"}
-                strokeWidth={isAttacked ? "2" : "1"} strokeDasharray={isPatched ? "none" : "4 4"} />
-            </svg>
-          </motion.div>
-        );
-      })}
-
-      {/* ── Core Router ─────────────────────────────────────────────────── */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 cursor-pointer"
-        onClick={() => setSelectedNode({ id: 'core', label: 'CORE ROUTER', angle: 0, status: 'open' })}>
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
-          className={`w-20 h-20 flex items-center justify-center rounded-xl shadow-[0_0_40px_rgba(0,218,243,0.4)] relative z-30 ${state.network?.foothold ? 'bg-secondary text-on-secondary shadow-[0_0_50px_rgba(255,82,95,0.6)]' : 'bg-primary text-on-primary'}`}>
-          {state.network?.foothold ? <AlertTriangle size={32} /> : <Network size={32} />}
-        </motion.div>
+      {/* ── Network Canvas ──────────────────────────────────────────────── */}
+      <div className="absolute inset-0 z-10 p-24">
+        <NodeMap
+          nodes={nodes}
+          attackerAt={state.network?.attacker_at}
+          foothold={state.network?.foothold}
+          onNodeClick={setSelectedNode}
+        />
       </div>
 
       {/* ── Node Detail Panel (right slide-in) ──────────────────────────── */}
@@ -258,68 +162,184 @@ export const MapView = () => {
               <div className="space-y-2">
                 <div className="text-[9px] font-black uppercase tracking-widest text-on-surface/40">Exploit Exposure</div>
                 <div className="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-                  <div className="h-full bg-secondary shadow-[0_0_10px_rgba(255,82,95,0.5)]" style={{ width: '94%' }} />
+                  <div
+                    className={`h-full transition-all duration-1000 ${selectedNode.status === 'patched' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-secondary shadow-[0_0_10px_rgba(255,82,95,0.5)]'}`}
+                    style={{ width: `${selectedNodeRiskScore}%` }}
+                  />
                 </div>
-                <div className="text-[9px] text-secondary/60 font-mono">94% — CRITICAL</div>
+                <div className="text-[9px] text-secondary/60 font-mono">
+                  {selectedNode.status === 'patched' ? '0% — SECURED' :
+                    (() => {
+                      const score = selectedNodeRiskScore;
+                      if (score > 80) return `${score}% — CRITICAL`;
+                      if (score > 50) return `${score}% — HIGH`;
+                      return `${score}% — MEDIUM`;
+                    })()
+                  }
+                </div>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Bottom Right: Progress & Controls ──────────────────────────── */}
-      <div className="absolute bottom-12 right-12 w-80 space-y-4 pointer-events-none z-40">
-        {state.stats && (
-          <button onClick={() => setShowReport(true)}
-            className="pointer-events-auto w-full flex items-center justify-center gap-3 px-6 py-3 bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/40 text-primary font-black text-xs tracking-[0.3em] uppercase rounded-xl hover:bg-primary/20 transition-all animate-pulse">
-            <FileText size={14} /> View Match Report
-          </button>
-        )}
-        <GlassCard className="p-5 relative overflow-hidden backdrop-blur-3xl bg-surface-container-low/60">
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="font-headline font-black text-xs uppercase tracking-[0.3em] italic text-primary">{state.isRunning ? 'COMBAT ENGAGED' : 'ARENA READY'}</h4>
-            <span className="text-on-surface font-headline font-black text-2xl italic">{state.network?.step || 0}<span className="text-on-surface/20">/</span>40</span>
-          </div>
-          <div className="relative h-2 bg-surface-container-highest rounded-full overflow-hidden">
-            <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-primary-container transition-all duration-300 shadow-[0_0_15px_rgba(0,218,243,0.5)]"
-              style={{ width: `${((state.network?.step || 0) / 40) * 100}%` }} />
-          </div>
-        </GlassCard>
-        <div className="grid grid-cols-2 gap-4 pointer-events-auto">
-          <div className="bg-surface-container-low/60 backdrop-blur-3xl p-4 rounded-2xl border border-primary/20 shadow-2xl">
-            <div className="text-3xl font-headline font-black text-on-surface italic">
-              {nodes.filter(n => n.status === 'patched').length}<span className="text-primary/20 mx-1">/</span>{nodes.length || 5}
+      {/* ── Unified Command Center Dock ────────────────────────────────────── */}
+      <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-40 w-fit max-w-[95vw]">
+        <div className="bg-[#0b0f14]/90 backdrop-blur-3xl border border-white/10 rounded-2xl p-1.5 flex items-center gap-4 shadow-[0_25px_80px_rgba(0,0,0,0.9)]">
+
+          {/* Setup Group */}
+          <div className="flex items-center gap-3 pl-2 pr-4 border-r border-white/5">
+            <button onClick={() => setShowImport(true)}
+              className="p-2.5 text-on-surface/40 hover:text-primary hover:bg-white/5 rounded-xl transition-all" title="Import Template">
+              <Download size={18} />
+            </button>
+            <div className="flex items-center gap-4 px-4 py-2.5 bg-white/5 rounded-xl border border-white/5">
+              <span className="text-primary font-black text-[9px] uppercase tracking-widest min-w-[42px] italic">{nodeCount} Nodes</span>
+              <input type="range" min="3" max="50" value={nodeCount} onChange={(e) => setNodeCount(Number(e.target.value))} className="w-20 accent-primary scale-90" />
+              <button onClick={() => randomizeMap(nodeCount)} className="p-1 text-primary/60 hover:text-primary transition-all">
+                <Dices size={18} />
+              </button>
             </div>
-            <div className="text-[9px] text-primary mt-1 uppercase font-black tracking-widest">Patched</div>
           </div>
-          <div className="bg-surface-container-low/60 backdrop-blur-3xl p-4 rounded-2xl border border-secondary/20 shadow-2xl">
-            <div className="text-3xl font-headline font-black text-secondary italic">{state.network?.alerts || 0}</div>
-            <div className="text-[9px] text-secondary mt-1 uppercase font-black tracking-widest">Alerts</div>
+
+          {/* Team Group */}
+          <div className="flex items-center gap-2 px-2 border-r border-white/5">
+            <AgentCounter label="RED ADVERSARY" color="red" count={state.redAgents}
+              onInc={() => setRedAgents(state.redAgents + 1)} onDec={() => setRedAgents(Math.max(1, state.redAgents - 1))} />
+            <AgentCounter label="BLUE DEFENDER" color="blue" count={state.blueAgents}
+              onInc={() => setBlueAgents(state.blueAgents + 1)} onDec={() => setBlueAgents(Math.max(0, state.blueAgents - 1))} />
+          </div>
+
+          {/* Mission/Task Group */}
+          <div className="flex gap-1.5 p-1 rounded-xl bg-black/40 border border-white/5">
+            {tasks.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSelectedTask(t.id as any)}
+                className={cn(
+                  "px-4 py-2.5 text-[8px] font-black uppercase tracking-widest rounded-lg transition-all",
+                  selectedTask === t.id
+                    ? (t.color === 'red' || t.id.includes('exploit') || t.id.includes('capture') ? "bg-secondary text-on-secondary shadow-[0_0_15px_rgba(255,82,95,0.3)]" : "bg-primary text-on-primary shadow-[0_0_15px_rgba(0,218,243,0.3)]")
+                    : "text-on-surface/30 hover:text-on-surface hover:bg-white/5"
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Execution & Status Group */}
+          <div className="flex items-center gap-4 pr-1">
+            {!state.isRunning ? (
+              <button onClick={() => {
+                const task = tasks.find(t => t.id === selectedTask);
+                startMatch(task?.steps || 40, selectedTask);
+              }}
+                className="flex items-center gap-4 pl-8 pr-10 py-4 bg-gradient-to-br from-primary to-primary-container text-on-primary font-black text-[11px] tracking-[0.4em] uppercase rounded-xl shadow-[0_10px_30px_rgba(0,218,243,0.2)] hover:scale-[1.02] active:scale-95 transition-all cursor-pointer italic whitespace-nowrap">
+                <Play size={16} fill="currentColor" /> Launch Simulation
+              </button>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 px-5 py-2 bg-white/5 border border-white/10 rounded-xl">
+                  <div className="flex flex-col items-end">
+                    <span className="text-[7px] text-on-surface/40 uppercase font-black tracking-widest leading-none mb-1">Audit Step</span>
+                    <span className="text-sm font-mono text-primary font-black leading-none">{state.network?.step || 0}<span className="opacity-20 mx-0.5">/</span>40</span>
+                  </div>
+                  <div className="flex gap-2 border-l border-white/10 pl-3">
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] font-black text-secondary">{state.network?.alerts || 0}</span>
+                      <AlertTriangle size={10} className="text-secondary/60" />
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] font-black text-green-400">{nodes.filter(n => n.status === 'patched').length}</span>
+                      <Shield size={10} className="text-green-400/60" />
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => stopMatch()}
+                  className="flex items-center gap-3 px-6 py-4 bg-secondary/10 border border-secondary/30 text-secondary font-black text-[10px] tracking-[0.2em] uppercase rounded-xl hover:bg-secondary/20 transition-all cursor-pointer italic">
+                  <Square size={14} fill="currentColor" /> Abort
+                </button>
+              </div>
+            )}
           </div>
         </div>
+        {state.stats && (
+          <button onClick={() => setShowReport(true)}
+            className="absolute -top-12 left-1/2 -translate-x-1/2 w-fit flex items-center justify-center gap-3 px-8 py-2.5 bg-primary text-on-primary font-black text-[10px] tracking-[0.4em] uppercase rounded-full shadow-[0_0_30px_rgba(0,218,243,0.4)] hover:scale-105 transition-all animate-pulse pointer-events-auto">
+            <FileText size={14} /> Final Report Ready
+          </button>
+        )}
       </div>
 
-      {/* ── Bottom Center: Deploy Controls ─────────────────────────────────── */}
-      <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center space-y-4">
-        {!state.isRunning && (
-          <div className="flex gap-4 p-3 rounded-2xl bg-surface-container-low/80 backdrop-blur-md border border-outline-variant/10 shadow-xl">
-            <AgentCounter label="Red" color="red" count={state.redAgents}
-              onInc={() => setRedAgents(state.redAgents + 1)} onDec={() => setRedAgents(Math.max(1, state.redAgents - 1))} />
-            <div className="w-px bg-outline-variant/20 h-10 my-auto" />
-            <AgentCounter label="Blue" color="blue" count={state.blueAgents}
-              onInc={() => setBlueAgents(state.blueAgents + 1)} onDec={() => setBlueAgents(Math.max(1, state.blueAgents - 1))} />
+      {/* ── Terminal Gutter — fixed bottom drawer ────────────────────────── */}
+      <div className={`fixed bottom-0 right-0 left-16 z-50 transition-all duration-500 ease-in-out ${showTerminal ? 'h-72' : 'h-10'}`}>
+        {/* Header bar — always visible */}
+        <div
+          onClick={() => setShowTerminal(!showTerminal)}
+          className="flex items-center justify-between px-6 h-10 bg-background/95 backdrop-blur-xl border-t border-primary/15 cursor-pointer hover:bg-surface-container-low/80 transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <div className={`w-1.5 h-1.5 rounded-full ${state.isRunning ? 'bg-primary animate-pulse shadow-[0_0_8px_rgba(0,218,243,0.8)]' : 'bg-on-surface/20'}`} />
+            <TerminalIcon size={12} className="text-primary/60" />
+            <span className="text-[9px] font-black uppercase tracking-[0.25em] text-on-surface/40 group-hover:text-primary/60 transition-colors">
+              Simulation Console
+            </span>
+            {(state.redLogs.length > 0 || state.blueLogs.length > 0) && (
+              <span className="px-1.5 py-0.5 bg-primary/15 text-primary text-[8px] font-black rounded tracking-widest">
+                {state.redLogs.length + state.blueLogs.length} events
+              </span>
+            )}
           </div>
-        )}
-        {!state.isRunning ? (
-          <button onClick={() => startMatch(40)}
-            className="flex items-center gap-4 px-12 py-5 bg-gradient-to-br from-primary to-primary-container text-on-primary font-black text-xs tracking-[0.4em] uppercase rounded-full shadow-[0_10px_40px_rgba(0,218,243,0.4)] hover:scale-105 active:scale-95 transition-all cursor-pointer italic">
-            <Play size={18} fill="currentColor" /> Deploy Agents
-          </button>
-        ) : (
-          <button onClick={() => stopMatch()}
-            className="flex items-center gap-4 px-12 py-5 bg-gradient-to-br from-secondary to-secondary-container text-on-secondary font-black text-xs tracking-[0.4em] uppercase rounded-full shadow-[0_10px_40px_rgba(255,82,95,0.4)] hover:scale-105 active:scale-95 transition-all cursor-pointer italic">
-            <Square size={18} fill="currentColor" /> Abort Session
-          </button>
+          <div className="flex items-center gap-4">
+            <span className="text-[8px] font-mono text-on-surface/20 uppercase tracking-widest">ADV_CONSOLE · DEF_CONSOLE</span>
+            <ChevronDown size={12} className={`text-primary/40 transition-transform duration-300 ${showTerminal ? '' : 'rotate-180'}`} />
+          </div>
+        </div>
+
+        {/* Terminal content */}
+        {showTerminal && (
+          <div className="h-[calc(100%-2.5rem)] flex gap-3 p-3 bg-background/98 backdrop-blur-3xl border-t border-primary/5">
+            {/* Adversary Console */}
+            <div className="flex-1 flex flex-col bg-black/70 rounded-xl border border-secondary/20 overflow-hidden">
+              <div className="bg-secondary/5 px-4 py-2 border-b border-secondary/15 flex items-center gap-2">
+                <div className="w-1 h-1 rounded-full bg-secondary animate-pulse" />
+                <span className="text-[8px] font-black uppercase tracking-[0.3em] text-secondary/70">Adversary Console</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 font-mono text-[10px] leading-relaxed custom-scrollbar space-y-2">
+                {state.redLogs.length > 0 ? (
+                  state.redLogs.map((log) => (
+                    <div key={log.id} className="border-l border-secondary/20 pl-3">
+                      <div className="text-secondary/40 text-[8px] mb-0.5">[{log.timestamp}] › {log.metadata?.cmd || 'EXEC'}</div>
+                      <div className="text-on-surface/70">{log.metadata?.console || '> Action executed.'}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-full flex items-center justify-center text-secondary/20 italic text-[9px] uppercase tracking-widest">No adversary events yet</div>
+                )}
+              </div>
+            </div>
+
+            {/* Defender Console */}
+            <div className="flex-1 flex flex-col bg-black/70 rounded-xl border border-primary/20 overflow-hidden">
+              <div className="bg-primary/5 px-4 py-2 border-b border-primary/15 flex items-center gap-2">
+                <div className="w-1 h-1 rounded-full bg-primary animate-pulse" />
+                <span className="text-[8px] font-black uppercase tracking-[0.3em] text-primary/70">Defender Console</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 font-mono text-[10px] leading-relaxed custom-scrollbar space-y-2">
+                {state.blueLogs.length > 0 ? (
+                  state.blueLogs.map((log) => (
+                    <div key={log.id} className="border-l border-primary/20 pl-3">
+                      <div className="text-primary/40 text-[8px] mb-0.5">[{log.timestamp}] › {log.metadata?.cmd || 'EXEC'}</div>
+                      <div className="text-on-surface/70">{log.metadata?.console || '> Action executed.'}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-full flex items-center justify-center text-primary/20 italic text-[9px] uppercase tracking-widest">No defense events yet</div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
@@ -327,6 +347,50 @@ export const MapView = () => {
       {showReport && state.stats && (
         <ReportView stats={state.stats} steps={state.network?.step || 0} alerts={state.network?.alerts || 0} onClose={() => setShowReport(false)} />
       )}
+
+      {/* ── Import Modal ─────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showImport && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-8">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-surface-container border border-primary/20 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
+              <div className="p-6 border-b border-white/5 flex justify-between items-center bg-surface-container-low">
+                <div>
+                  <h3 className="text-xl font-headline font-black text-on-surface uppercase italic tracking-widest">Deploy Builder Template</h3>
+                  <p className="text-xs text-on-surface/50 mt-1 uppercase tracking-widest">Load saved network topologies into the arena</p>
+                </div>
+                <button onClick={() => setShowImport(false)} className="p-2 hover:bg-white/5 rounded-full text-on-surface/40 hover:text-on-surface">✕</button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+                {templates.length === 0 ? (
+                  <div className="text-center py-12 text-on-surface/30 italic uppercase tracking-widest">No templates found. Save one in the Builder.</div>
+                ) : (
+                  templates.map(t => {
+                    const totalServices = Object.keys(t.services || {}).length;
+                    const exploitableServices = t.exploitable?.length || 0;
+                    const rating = Math.round(((totalServices - exploitableServices) / Math.max(1, totalServices)) * 100);
+
+                    return (
+                      <div key={t.name} className="flex items-center justify-between p-4 bg-surface-container-highest border border-white/5 rounded-xl hover:border-primary/30 transition-colors group">
+                        <div>
+                          <div className="text-lg font-headline font-black text-primary uppercase tracking-widest italic">{t.name}</div>
+                          <div className="text-xs text-on-surface/50 font-mono mt-1">
+                            {totalServices} Nodes • {exploitableServices} Exploitable • Rating: <span className={rating > 70 ? 'text-green-400' : rating > 40 ? 'text-yellow-400' : 'text-secondary'}>{rating}/100</span>
+                          </div>
+                        </div>
+                        <button onClick={() => { setActiveTemplate(t); setShowImport(false); }}
+                          className="px-6 py-2 bg-primary/10 text-primary font-black text-[10px] uppercase tracking-widest rounded-lg border border-primary/30 opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/20">
+                          Deploy
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

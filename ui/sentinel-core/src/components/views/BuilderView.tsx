@@ -109,10 +109,24 @@ export const BuilderView = () => {
   const { state, setActiveTemplate } = useRvsbApi();
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  const [nodes, setNodes] = useState<CanvasNode[]>([]);
-  const [links, setLinks] = useState<CanvasLink[]>([]);
+  const [nodes, setNodes] = useState<CanvasNode[]>(() => {
+    const saved = localStorage.getItem('rvsb_builder_nodes');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [links, setLinks] = useState<CanvasLink[]>(() => {
+    const saved = localStorage.getItem('rvsb_builder_links');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('rvsb_builder_nodes', JSON.stringify(nodes));
+    localStorage.setItem('rvsb_builder_links', JSON.stringify(links));
+  }, [nodes, links]);
+
   const [selected, setSelected] = useState<CanvasNode | null>(null);
   const [dragging, setDragging] = useState<{ uid: string; ox: number; oy: number } | null>(null);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const [linking, setLinking] = useState<string | null>(null); // uid of source node
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -135,13 +149,25 @@ export const BuilderView = () => {
   };
 
   const onCanvasMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!dragging) return;
-    setNodes(prev => prev.map(n =>
-      n.uid === dragging.uid ? { ...n, x: e.clientX - dragging.ox, y: e.clientY - dragging.oy } : n
-    ));
-  }, [dragging]);
+    if (dragging) {
+      setNodes(prev => prev.map(n =>
+        n.uid === dragging.uid ? { ...n, x: e.clientX - dragging.ox, y: e.clientY - dragging.oy } : n
+      ));
+    } else if (isPanning) {
+      setPan(prev => ({ x: prev.x + e.movementX, y: prev.y + e.movementY }));
+    }
+  }, [dragging, isPanning]);
 
-  const onCanvasMouseUp = () => setDragging(null);
+  const onCanvasMouseUp = () => {
+    setDragging(null);
+    setIsPanning(false);
+  };
+
+  const onCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0) {
+      setIsPanning(true);
+    }
+  };
 
   // ── Drop from sidebar ────────────────────────────────────────────────────
   const onDragStart = (e: React.DragEvent, typeId: string) => {
@@ -152,8 +178,8 @@ export const BuilderView = () => {
     const typeId = e.dataTransfer.getData('typeId');
     if (!typeId) return;
     const rect = canvasRef.current!.getBoundingClientRect();
-    const x = e.clientX - rect.left - 32;
-    const y = e.clientY - rect.top - 32;
+    const x = e.clientX - rect.left - 32 - pan.x;
+    const y = e.clientY - rect.top - 32 - pan.y;
     const node = defaultNode(typeId, x, y);
     setNodes(prev => [...prev, node]);
     setSelected(node);
@@ -306,77 +332,82 @@ export const BuilderView = () => {
       {/* ── Main Canvas ───────────────────────────────────────────────────── */}
       <div
         ref={canvasRef}
-        className="flex-1 relative bg-[#07090c] overflow-hidden"
+        className={`flex-1 relative bg-[#07090c] overflow-hidden ${isPanning ? 'cursor-grabbing' : 'cursor-default'}`}
         style={{
           backgroundImage: 'radial-gradient(circle, rgba(0,218,243,0.04) 1px, transparent 1px)',
           backgroundSize: '28px 28px',
+          backgroundPosition: `${pan.x}px ${pan.y}px`
         }}
+        onMouseDown={onCanvasMouseDown}
         onMouseMove={onCanvasMouseMove}
         onMouseUp={onCanvasMouseUp}
+        onMouseLeave={onCanvasMouseUp}
         onDrop={onCanvasDrop}
         onDragOver={e => e.preventDefault()}
         onClick={() => { setSelected(null); if (linking) setLinking(null); }}
       >
-        {/* SVG connection lines */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none">
-          {links.map((link, i) => {
-            const from = nodes.find(n => n.uid === link.from);
-            const to = nodes.find(n => n.uid === link.to);
-            if (!from || !to) return null;
+        <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }} className="absolute inset-0 w-full h-full">
+          {/* SVG connection lines */}
+          <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none">
+            {links.map((link, i) => {
+              const from = nodes.find(n => n.uid === link.from);
+              const to = nodes.find(n => n.uid === link.to);
+              if (!from || !to) return null;
+              return (
+                <line
+                  key={i}
+                  x1={from.x + 32} y1={from.y + 32}
+                  x2={to.x + 32} y2={to.y + 32}
+                  stroke="rgba(0,218,243,0.3)"
+                  strokeWidth="1.5"
+                  strokeDasharray="6 4"
+                />
+              );
+            })}
+          </svg>
+
+          {/* Nodes */}
+          {nodes.map(node => {
+            const def = getNodeDef(node.typeId);
+            const Icon = def.icon;
+            const isSelected = selected?.uid === node.uid;
+            const isLinker = linking === node.uid;
+
             return (
-              <line
-                key={i}
-                x1={from.x + 32} y1={from.y + 32}
-                x2={to.x + 32} y2={to.y + 32}
-                stroke="rgba(0,218,243,0.3)"
-                strokeWidth="1.5"
-                strokeDasharray="6 4"
-              />
+              <div
+                key={node.uid}
+                style={{ left: node.x, top: node.y, position: 'absolute' }}
+                onMouseDown={e => { e.stopPropagation(); onNodeMouseDown(e, node.uid); }}
+                onClick={e => { e.stopPropagation(); setSelected(node); }}
+                className="group select-none"
+              >
+                <div className={`relative w-16 h-16 flex flex-col items-center justify-center rounded-xl border-2 backdrop-blur-md cursor-grab active:cursor-grabbing transition-all
+                ${isSelected ? 'border-secondary shadow-[0_0_30px_rgba(255,82,95,0.5)] scale-110' :
+                    isLinker ? 'border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.5)]' :
+                      `${def.border} shadow-[0_0_15px_rgba(0,218,243,0.1)] hover:scale-105`}
+                ${def.bg}`}
+                >
+                  <Icon size={20} className={isSelected ? 'text-secondary' : def.color} />
+                  <div className={`absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[8px] font-bold uppercase tracking-widest ${isSelected ? 'text-secondary' : 'text-on-surface/60'}`}>
+                    {node.label}
+                  </div>
+                  {/* Link button */}
+                  <button
+                    title="Draw connection"
+                    onClick={e => onNodeLinkClick(e, node.uid)}
+                    className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-surface-container-high border border-primary/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/20"
+                  >
+                    <Link2 size={10} className="text-primary" />
+                  </button>
+                  {/* Access level indicator */}
+                  <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-surface-container-low ${node.accessLevel === 'exploitable' ? 'bg-secondary' :
+                    node.accessLevel === 'honeypot' ? 'bg-yellow-400' : 'bg-green-400'
+                    }`} />
+                </div>
+              </div>
             );
           })}
-        </svg>
-
-        {/* Nodes */}
-        {nodes.map(node => {
-          const def = getNodeDef(node.typeId);
-          const Icon = def.icon;
-          const isSelected = selected?.uid === node.uid;
-          const isLinker = linking === node.uid;
-
-          return (
-            <div
-              key={node.uid}
-              style={{ left: node.x, top: node.y, position: 'absolute' }}
-              onMouseDown={e => onNodeMouseDown(e, node.uid)}
-              onClick={e => { e.stopPropagation(); setSelected(node); }}
-              className="group select-none"
-            >
-              <div className={`relative w-16 h-16 flex flex-col items-center justify-center rounded-xl border-2 backdrop-blur-md cursor-move transition-all
-                ${isSelected ? 'border-secondary shadow-[0_0_30px_rgba(255,82,95,0.5)] scale-110' :
-                  isLinker ? 'border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.5)]' :
-                    `${def.border} shadow-[0_0_15px_rgba(0,218,243,0.1)] hover:scale-105`}
-                ${def.bg}`}
-              >
-                <Icon size={20} className={isSelected ? 'text-secondary' : def.color} />
-                <div className={`absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[8px] font-bold uppercase tracking-widest ${isSelected ? 'text-secondary' : 'text-on-surface/60'}`}>
-                  {node.label}
-                </div>
-                {/* Link button */}
-                <button
-                  title="Draw connection"
-                  onClick={e => onNodeLinkClick(e, node.uid)}
-                  className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-surface-container-high border border-primary/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/20"
-                >
-                  <Link2 size={10} className="text-primary" />
-                </button>
-                {/* Access level indicator */}
-                <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-surface-container-low ${node.accessLevel === 'exploitable' ? 'bg-secondary' :
-                  node.accessLevel === 'honeypot' ? 'bg-yellow-400' : 'bg-green-400'
-                  }`} />
-              </div>
-            </div>
-          );
-        })}
+        </div>
 
         {/* Empty state hint */}
         {nodes.length === 0 && (

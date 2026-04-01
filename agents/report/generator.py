@@ -113,11 +113,25 @@ def generate(
     blue_stats: Dict,
     narrative: str = "",
     target: str = "Simulated Corporate Network",
+    config: Optional[Dict] = None,
 ) -> Path:
     """Generate and save an HTML report, returns the file path."""
     blue_scores = {k: round(1 - v, 3) for k, v in red_scores.items()}
     overall_red = sum(red_scores.values()) / max(len(red_scores), 1)
-    security_score = round((1 - overall_red) * 100)
+    
+    if config and "services" in config:
+        total_svcs = len(config["services"])
+        exploitable = len(config.get("exploitable", []))
+        security_score = round(((total_svcs - exploitable) / max(1, total_svcs)) * 100)
+        
+        topology_text = "\n\nTopology Analysis:\n"
+        for svc_id, svc_data in config["services"].items():
+            is_exploit = svc_id in config.get("exploitable", [])
+            topology_text += f"- {svc_data.get('label', svc_id)}: {'[CRITICAL] Exploitable' if is_exploit else 'Secured'}\n"
+    else:
+        security_score = round((1 - overall_red) * 100)
+        topology_text = ""
+
     risk_level, score_color = _risk_level(security_score)
 
     task_rows = []
@@ -140,7 +154,8 @@ def generate(
             f"Executive Summary\n"
             f"The target network achieved a security score of {security_score}/100 ({risk_level} risk).\n\n"
             f"Technical Findings\n"
-            f"The Red Team achieved {overall_red*100:.1f}% average attack success.\n\n"
+            f"The Red Team achieved {overall_red*100:.1f}% average attack success."
+            f"{topology_text}\n\n"
             f"Recommendations\n"
             f"Focus on hardening services identified during the stealth recon phase.\n"
             f"Note: Enable LLM (Ollama) for detailed AI-generated analysis."

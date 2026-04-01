@@ -21,19 +21,37 @@ from agents.report import generator as report_gen
 ENV_URL = "http://localhost:7860"
 
 
+def color_print(role: str, msg: str):
+    """Helper for pretty terminal logging during match."""
+    colors = {
+        "red": "\033[91m",
+        "blue": "\033[94m",
+        "system": "\033[93m",
+        "success": "\033[92m",
+        "reset": "\033[0m"
+    }
+    prefix = f"[{role.upper()}] "
+    c = colors.get(role.lower(), colors["reset"])
+    print(f"{c}{prefix}{msg}{colors['reset']}")
+
+
+# Thread-local storage for concurrent match session isolation
+_tls = threading.local()
+
 def _post(env_url: str, path: str, body: Optional[Dict] = None) -> Dict:
-    r = requests.post(f"{env_url}{path}", json=body or {}, timeout=10)
+    sid = getattr(_tls, "session_id", "default")
+    r = requests.post(f"{env_url}{path}", json=body or {}, headers={"x-session-id": sid}, timeout=10)
     r.raise_for_status()
     return r.json()
-
 
 def _get(env_url: str, path: str, params: Optional[Dict] = None) -> Dict:
-    r = requests.get(f"{env_url}{path}", params=params, timeout=10)
+    sid = getattr(_tls, "session_id", "default")
+    r = requests.get(f"{env_url}{path}", params=params, headers={"x-session-id": sid}, timeout=10)
     r.raise_for_status()
     return r.json()
 
 
-BLUE_VALID = {0, 1, 6, 7, 8, 9}  # passive scan, slow scan, patch-*, monitor
+BLUE_VALID = set(range(22, 40))  # Patching (22-28), Active Defense (29-32), Monitoring (33-39)
 
 
 def run_concurrent_match(
@@ -54,6 +72,10 @@ def run_concurrent_match(
     emit(event_type, data) is called for every event so the API can
     forward it to SSE subscribers.
     """
+    # Assign a unique session ID to this thread
+    import uuid
+    _tls.session_id = str(uuid.uuid4())
+
     # Initialize multiple policies for multi-agent teams
     red_policies = [
         PPOPolicy("red", save_path="agents/rl/red_policy.json")
@@ -61,7 +83,7 @@ def run_concurrent_match(
     ]
     blue_policies = [
         PPOPolicy("blue", save_path="agents/rl/blue_policy.json", epsilon=0.4)
-        for _ in range(max(1, blue_agents))
+        for _ in range(max(0, blue_agents))
     ]
     llm_available = llm.is_available()
 
@@ -76,7 +98,10 @@ def run_concurrent_match(
     if config:
         services = list(config.get("services", {}).keys())
         exploitable = config.get("exploitable", [])
+        task_id = config.get("task_id")
         env_config = {"nodes": services, "exploitable": exploitable}
+        if task_id:
+            env_config["task_id"] = task_id
 
     # --- Reset env ---
     obs = _post(env_url, "/reset", {"config": env_config})
@@ -98,7 +123,12 @@ def run_concurrent_match(
         for agent_idx, red_policy in enumerate(red_policies):
             red_state = _encode_obs(obs, step, "red")
             red_idx, _ = red_policy.select_action(red_state)
+            
+            if red_idx > 21:
+                red_idx = 0  # Restrict Red to 0-21 (Recon, Exploit, Exfil)
+                
             red_action = dict(ACTION_MAP[red_idx])
+            red_action["role"] = "red"
             red_name = ACTION_NAMES[red_idx]
 
             red_reasoning = ""
@@ -117,6 +147,16 @@ def run_concurrent_match(
                 entry += f"  |  {red_reasoning[:70]}"
             timeline.append(entry)
 
+            # Terminal Logging (Simplified for stdout)
+            color_print("red", f"Step {step+1} [Agent {agent_idx+1}]: {red_name} -> Reward: {red_reward:.3f}")
+            if "console" in obs.get("metadata", {}):
+                print(f"      \033[90m> {obs['metadata']['console']}\033[0m")
+
+            # Update SSE metadata
+            sse_metadata = dict(obs.get("metadata", {}))
+            if "console" in sse_metadata:
+                sse_metadata["cmd"] = sse_metadata["console"]
+
             emit("red_action", {
                 "step": step + 1,
                 "agent_id": agent_idx + 1,
@@ -124,20 +164,23 @@ def run_concurrent_match(
                 "reward": red_reward,
                 "reasoning": red_reasoning,
                 "log": entry,
+                "metadata": sse_metadata
             })
             emit("network_state", _build_network_state(obs, step + 1, config))
 
             if obs.get("done"):
                 break
-        time.sleep(0.15)
+        
+        time.sleep(1.5)
 
         # ── BLUE TURNS (all blue agents act sequentially) ─────────────────
         for agent_idx, blue_policy in enumerate(blue_policies):
             blue_state = _encode_obs(obs, step, "blue")
             blue_idx, _ = blue_policy.select_action(blue_state)
             if blue_idx not in BLUE_VALID:
-                blue_idx = 9
+                blue_idx = 33
             blue_action = dict(ACTION_MAP[blue_idx])
+            blue_action["role"] = "blue"
             blue_name = ACTION_NAMES[blue_idx]
 
             blue_reasoning = ""
@@ -156,6 +199,16 @@ def run_concurrent_match(
                 blue_entry += f"  |  {blue_reasoning[:70]}"
             timeline.append(blue_entry)
 
+            # Terminal Logging (Simplified for stdout)
+            color_print("blue", f"Step {step+1} [Agent {agent_idx+1}]: {blue_name} -> Reward: {blue_reward:.3f}")
+            if "console" in obs_after.get("metadata", {}):
+                print(f"      \033[90m> {obs_after['metadata']['console']}\033[0m")
+
+            # Update SSE metadata
+            sse_metadata_blue = dict(obs_after.get("metadata", {}))
+            if "console" in sse_metadata_blue:
+                sse_metadata_blue["cmd"] = sse_metadata_blue["console"]
+
             emit("blue_action", {
                 "step": step + 1,
                 "agent_id": agent_idx + 1,
@@ -163,6 +216,7 @@ def run_concurrent_match(
                 "reward": blue_reward,
                 "reasoning": blue_reasoning,
                 "log": blue_entry,
+                "metadata": sse_metadata_blue
             })
 
             obs = obs_after
@@ -194,29 +248,70 @@ def run_concurrent_match(
             blue_debrief_scores = {k: round(1 - v, 3) for k, v in red_scores.items()}
             blue_strategy = llm.post_episode_debrief("blue", [], blue_debrief_scores, blue_mistakes, blue_guidance)
 
-    mem.save_episode("red",  red_policy.episode_count,  red_scores,
-                     red_mistakes,  red_strategy,  avg_red)
-    mem.save_episode("blue", blue_policy.episode_count,
-                     {k: round(1 - v, 3) for k, v in red_scores.items()},
-                     blue_mistakes, blue_strategy, avg_blue)
+    if red_policies:
+        mem.save_episode("red",  red_policies[0].episode_count,  red_scores,
+                         red_mistakes,  red_strategy,  avg_red)
+    # Only save memory for Blue if an agent exists
+    if blue_policies:
+        mem.save_episode("blue", blue_policies[0].episode_count,
+                         {k: round(1 - v, 3) for k, v in red_scores.items()},
+                         blue_mistakes, blue_strategy, avg_blue)
+
+    red_stats = red_policies[0].stats() if red_policies else {}
+    blue_stats = blue_policies[0].stats() if blue_policies else {}
+    red_episodes = red_policies[0].episode_count if red_policies else 0
 
     # ── Report ───────────────────────────────────────────────────────
     report_path = report_gen.generate(
         red_scores=red_scores,
-        episode_count=red_policy.episode_count,
+        episode_count=red_episodes,
         attack_timeline=timeline,
-        red_stats=red_policy.stats(),
-        blue_stats=blue_policy.stats(),
+        red_stats=red_stats,
+        blue_stats=blue_stats,
+        config=config,
     )
+
+    security_score = 0
+    vuln_matrix = []
+    
+    if config and "services" in config:
+        total_svcs = len(config["services"])
+        exploitable = len(config.get("exploitable", []))
+        security_score = round(((total_svcs - exploitable) / max(1, total_svcs)) * 100)
+        for svc_id, svc_data in config["services"].items():
+            is_exploit = svc_id in config.get("exploitable", [])
+            vuln_matrix.append({
+                "id": svc_id,
+                "label": svc_data.get("label", svc_id),
+                "exploitable": is_exploit
+            })
+    else:
+        overall_red = sum(red_scores.values()) / max(len(red_scores), 1)
+        security_score = round((1 - overall_red) * 100)
 
     result = {
         "red_scores":  red_scores,
         "blue_scores": {k: round(1 - v, 3) for k, v in red_scores.items()},
-        "red_stats":   red_policy.stats(),
-        "blue_stats":  blue_policy.stats(),
+        "red_stats":   red_stats,
+        "blue_stats":  blue_stats,
         "timeline":    timeline,
         "report_path": str(report_path),
+        "security_score": security_score,
+        "vuln_matrix": vuln_matrix,
     }
+
+    # Final Summary Table
+    print("\n" + "="*60)
+    color_print("system", f"MATCH COMPLETE — {max_steps} STEPS EXHAUSTED")
+    print("-" * 60)
+    print(f"{'TASK':<20} | {'RED SCORE':<15} | {'BLUE SCORE':<15}")
+    print("-" * 60)
+    for task, score in red_scores.items():
+        print(f"{task:<20} | {score:<15.3f} | {1-score:<15.3f}")
+    print("-" * 60)
+    color_print("success", f"Report Generated: {report_path}")
+    print("="*60 + "\n")
+
     emit("match_end", result)
     return result
 
@@ -248,13 +343,13 @@ def _build_network_state(obs: Dict, step: int, config: Optional[Dict] = None) ->
     nodes = []
     for i, svc in enumerate(services):
         angle = (i / len(services)) * 360
+        label = config.get("services", {}).get(svc, {}).get("label", svc.split('_')[0].upper()) if config else svc.split('_')[0].upper()
         nodes.append({
             "id":      svc,
-            "label":   svc.upper(),
+            "label":   label,
             "angle":   angle,
-            "status":  "patched"    if svc in patched
-                       else "open"  if svc in open_svc
-                       else "hidden",
+            "status":  "patched" if svc in patched else "open",
+            "discovered": bool((svc in open_svc) or (svc in patched))
         })
 
     return {

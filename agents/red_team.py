@@ -33,6 +33,20 @@ from agents.rl.ppo_agent import (
 _BASE_URL = "http://localhost:7860"
 
 
+def color_print(role: str, msg: str):
+    """Helper for pretty terminal logging."""
+    colors = {
+        "red": "\033[91m",
+        "blue": "\033[94m",
+        "system": "\033[93m",
+        "success": "\033[92m",
+        "reset": "\033[0m"
+    }
+    prefix = f"[{role.upper()}] "
+    c = colors.get(role.lower(), colors["reset"])
+    print(f"{c}{prefix}{msg}{colors['reset']}")
+
+
 class IntelligentRedAgent:
     """
     AI Red Team agent: learns to attack through reinforcement learning
@@ -47,6 +61,8 @@ class IntelligentRedAgent:
         self.action_log: List[str] = []
         self.timeline: List[str] = []
         self.session = requests.Session()
+        import uuid
+        self.session.headers.update({"x-session-id": str(uuid.uuid4())})
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -66,7 +82,7 @@ class IntelligentRedAgent:
     # ------------------------------------------------------------------
     def run_episode(self, user_guidance: str = "") -> Dict[str, Any]:
         """Run one attack episode. Returns scores + training stats + timeline."""
-        obs = self._post("/reset")
+        obs = self._post("/reset", {"config": {"training": True}})
         self.action_log = []
         self.timeline = []
         trajectory = []
@@ -81,7 +97,13 @@ class IntelligentRedAgent:
 
             state = _encode_obs(obs, step, "red")
             action_idx, probs = self.policy.select_action(state)
+            
+            # Restrict Red Team to attack/recon actions only (0-21)
+            if action_idx > 21:
+                action_idx = 0  # fallback: passive recon
+
             action_dict = dict(ACTION_MAP[action_idx])
+            action_dict["role"] = "red"
             action_name = ACTION_NAMES[action_idx]
 
             # LLM narration (async-safe: skipped if slow)
@@ -92,6 +114,11 @@ class IntelligentRedAgent:
             obs = self._post("/step", action_dict)
 
             reward = float(obs.get("reward") or 0.0)
+            
+            # Terminal Logging (Simplified)
+            color_print("red", f"Step {step+1}: {action_name} -> Reward: {reward:.3f}")
+            if "console" in obs.get("metadata", {}):
+                print(f"      \033[90m> {obs['metadata']['console']}\033[0m")
             trajectory.append((state, action_idx, reward))
 
             # Track mistakes
@@ -127,6 +154,11 @@ class IntelligentRedAgent:
         mem.save_episode("red", self.policy.episode_count, scores, mistakes,
                          strategy, avg_reward)
 
+        # Summary
+        print("-" * 40)
+        color_print("success", f"EPISODE {self.policy.episode_count} COMPLETE | Avg Reward: {avg_reward:.3f}")
+        print("-" * 40)
+
         return {
             "scores": scores,
             "policy_stats": self.policy.stats(),
@@ -134,4 +166,6 @@ class IntelligentRedAgent:
             "avg_reward": avg_reward,
             "timeline": list(self.timeline),
             "action_log": list(self.action_log),
+            "mistakes": mistakes,
+            "strategy_debrief": strategy,
         }
