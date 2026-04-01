@@ -33,7 +33,7 @@ The platform implements a **Zero-Sum Two-Sided Framework**:
 *The unified mission control interface allows for rapid deployment of audit tasks and real-time monitoring of agent behavior.*
 
 <div align="center">
-  <img src="C:\Users\ADMIN\.gemini\antigravity\brain\cd6647b1-cf7a-440c-9a55-481e736b0192\media__1775052127846.png" alt="Sentinel Core Command Center" width="90%"/>
+  <img src="./docs/assets/screenshots/arena_overview.png" alt="Sentinel Core Command Center" width="90%"/>
   <br/><sub>High-aesthetic "Mission Control" dock consolidating setup, team configuration, and task selection.</sub>
 </div>
 
