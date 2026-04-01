@@ -33,9 +33,30 @@ The platform implements a **Zero-Sum Two-Sided Framework**:
 *The unified mission control interface allows for rapid deployment of audit tasks and real-time monitoring of agent behavior.*
 
 <div align="center">
-  <img src="./docs/assets/screenshots/arena_overview.png" alt="Sentinel Core Command Center" width="90%"/>
-  <br/><sub>High-aesthetic "Mission Control" dock consolidating setup, team configuration, and task selection.</sub>
+  <img src="./assets/screenshots/Simulation.png" alt="Sentinel Core Simulation Arena" width="95%"/>
+  <br/><sub><b>Simulation Arena</b>: High-aesthetic Command Center dock consolidating setup, team configuration, and task selection.</sub>
 </div>
+
+---
+
+## 🎨 Platform Overview
+
+> Sentinel Core provides three specialized interfaces for full-cycle security benchmarking: Infrastructure Building, Tactical Simulation, and Agent Training.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="./assets/screenshots/Build.png" alt="Build Mode"/>
+      <br/><b>Infrastructure Builder</b>
+      <br/><sub>Procedural topology generation and template management for enterprise-scale network scenarios.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="./assets/screenshots/Training.png" alt="Training Center"/>
+      <br/><b>Training & Evaluation</b>
+      <br/><sub>Real-time agent performance tracking, multi-phase reward scoring, and CVSS audit telemetry.</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
