@@ -226,7 +226,7 @@ export const MapView = () => {
                       className={cn(
                         'flex items-center gap-1.5 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest rounded-md transition-all',
                         active
-                          ? 'bg-secondary text-on-secondary shadow-[0_0_12px_rgba(255,82,95,0.3)]'
+                          ? 'bg-secondary text-surface-container-lowest shadow-[0_0_12px_rgba(255,82,95,0.4)]'
                           : 'text-on-surface/30 hover:text-secondary hover:bg-white/5'
                       )}
                     >
