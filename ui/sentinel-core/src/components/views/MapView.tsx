@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Network, Database, AlertTriangle, Server, Shield, Globe,
   Swords, Target as TargetIcon, Play, Square, ChevronUp, ChevronDown,
-  FileText, Lock, Terminal as TerminalIcon, Dices, Download
+  FileText, Lock, Terminal as TerminalIcon, Dices, Download, Crosshair, Zap
 } from 'lucide-react';
 import { GlassCard, Badge } from '../ui/CyberComponents';
 import { cn } from '@/src/lib/utils';
@@ -52,14 +52,14 @@ export const MapView = () => {
   const [nodeCount, setNodeCount] = useState(5);
   const [showImport, setShowImport] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
-  const [selectedTask, setSelectedTask] = useState<'stealth_recon' | 'precision_exploit' | 'flag_capture' | 'autonomous_defense'>('stealth_recon');
+  const [targetIp, setTargetIp] = useState('10.0.0.1');
+  const [attackType, setAttackType] = useState<'stealth' | 'aggressive' | 'full_chain'>('stealth');
 
-  const tasks = [
-    { id: 'stealth_recon', label: 'Recon', color: 'primary', steps: 20 },
-    { id: 'precision_exploit', label: 'Exploit', color: 'secondary', steps: 40 },
-    { id: 'flag_capture', label: 'Exfil', color: 'secondary', steps: 60 },
-    { id: 'autonomous_defense', label: 'Defense', color: 'primary', steps: 60 },
-  ];
+  const attackModes = [
+    { id: 'stealth', label: 'Stealth', icon: Crosshair, hint: 'Passive recon, zero alerts', steps: 20, task: 'stealth_recon' },
+    { id: 'aggressive', label: 'Aggressive', icon: Zap, hint: 'High-impact exploit, max damage', steps: 40, task: 'precision_exploit' },
+    { id: 'full_chain', label: 'Full Chain', icon: Swords, hint: 'Recon → Exploit → Exfiltrate', steps: 60, task: 'flag_capture' },
+  ] as const;
 
 
   // Memoize risk score to avoid CPU spiking during high-speed RL render playback
@@ -210,30 +210,52 @@ export const MapView = () => {
               onInc={() => setBlueAgents(state.blueAgents + 1)} onDec={() => setBlueAgents(Math.max(0, state.blueAgents - 1))} />
           </div>
 
-          {/* Mission/Task Group */}
-          <div className="flex gap-1.5 p-1 rounded-xl bg-black/40 border border-white/5">
-            {tasks.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setSelectedTask(t.id as any)}
-                className={cn(
-                  "px-4 py-2.5 text-[8px] font-black uppercase tracking-widest rounded-lg transition-all",
-                  selectedTask === t.id
-                    ? (t.color === 'red' || t.id.includes('exploit') || t.id.includes('capture') ? "bg-secondary text-on-secondary shadow-[0_0_15px_rgba(255,82,95,0.3)]" : "bg-primary text-on-primary shadow-[0_0_15px_rgba(0,218,243,0.3)]")
-                    : "text-on-surface/30 hover:text-on-surface hover:bg-white/5"
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
+          {/* Red Team Sandbox */}
+          <div className="flex items-center gap-2 px-2 border-r border-white/5">
+            {/* Target IP */}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[7px] font-black uppercase tracking-widest text-secondary/60">Target IP</span>
+              <input
+                value={targetIp}
+                onChange={e => setTargetIp(e.target.value)}
+                className="w-28 bg-black/60 border border-secondary/20 text-secondary font-mono text-[10px] px-2 py-1 rounded-lg focus:outline-none focus:border-secondary/60 tracking-widest"
+                placeholder="10.0.0.1"
+              />
+            </div>
+            {/* Attack Mode Selector */}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[7px] font-black uppercase tracking-widest text-secondary/60">Attack Mode</span>
+              <div className="flex gap-1 p-0.5 rounded-lg bg-black/40 border border-white/5">
+                {attackModes.map(m => {
+                  const Icon = m.icon;
+                  const active = attackType === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setAttackType(m.id)}
+                      title={m.hint}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest rounded-md transition-all',
+                        active
+                          ? 'bg-secondary text-on-secondary shadow-[0_0_12px_rgba(255,82,95,0.3)]'
+                          : 'text-on-surface/30 hover:text-secondary hover:bg-white/5'
+                      )}
+                    >
+                      <Icon size={10} />
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {/* Execution & Status Group */}
           <div className="flex items-center gap-4 pr-1">
             {!state.isRunning ? (
               <button onClick={() => {
-                const task = tasks.find(t => t.id === selectedTask);
-                startMatch(task?.steps || 40, selectedTask);
+                const mode = attackModes.find(m => m.id === attackType);
+                startMatch(mode?.steps || 40, mode?.task || 'stealth_recon');
               }}
                 className="flex items-center gap-4 pl-8 pr-10 py-4 bg-gradient-to-br from-primary to-primary-container text-on-primary font-black text-[11px] tracking-[0.4em] uppercase rounded-xl shadow-[0_10px_30px_rgba(0,218,243,0.2)] hover:scale-[1.02] active:scale-95 transition-all cursor-pointer italic whitespace-nowrap">
                 <Play size={16} fill="currentColor" /> Launch Simulation
