@@ -95,33 +95,9 @@ export const MapView = () => {
         </div>
       </div>
 
-      {/* ── Agent Status Indicators (Top Right) ─────────────────────────── */}
-      <div className="absolute top-24 right-12 z-40 space-y-4">
-        <div className="flex items-center gap-4 justify-end">
-          <div className="text-right">
-            <div className="text-[10px] font-black text-secondary uppercase tracking-[0.2em]">Red Adversary{state.redAgents > 1 ? ` ×${state.redAgents}` : ''}</div>
-            <div className="text-sm font-headline font-bold text-on-surface/60 italic">
-              {state.availableModels?.find(m => m.id === state.globalModel)?.name || 'Dolphin Llama 3'}
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-full bg-secondary/20 border border-secondary/40 flex items-center justify-center shadow-[0_0_20px_rgba(255,82,95,0.3)]">
-            <TargetIcon size={20} className="text-secondary" />
-          </div>
-        </div>
-        <div className="flex items-center gap-4 justify-end">
-          <div className="text-right">
-            <div className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Blue Defender{state.blueAgents > 1 ? ` ×${state.blueAgents}` : ''}</div>
-            <div className="text-sm font-headline font-bold text-on-surface/60 italic">
-              {state.availableModels?.find(m => m.id === state.globalModel)?.name || 'Dolphin Llama 3'}
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center shadow-[0_0_20px_rgba(0,218,243,0.3)]">
-            <Shield size={20} className="text-primary" />
-          </div>
-        </div>
-      </div>
 
       {/* ── Network Canvas ──────────────────────────────────────────────── */}
+
       <div className="absolute inset-0 z-10 p-24">
         <NodeMap
           nodes={nodes}
