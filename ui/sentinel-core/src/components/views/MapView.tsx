@@ -52,7 +52,6 @@ export const MapView = () => {
   const [nodeCount, setNodeCount] = useState(5);
   const [showImport, setShowImport] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
-  const [targetIp, setTargetIp] = useState('10.0.0.1');
   const [attackType, setAttackType] = useState<'stealth' | 'aggressive' | 'full_chain'>('stealth');
 
   const attackModes = [
@@ -212,16 +211,6 @@ export const MapView = () => {
 
           {/* Red Team Sandbox */}
           <div className="flex items-center gap-2 px-2 border-r border-white/5">
-            {/* Target IP */}
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[7px] font-black uppercase tracking-widest text-secondary/60">Target IP</span>
-              <input
-                value={targetIp}
-                onChange={e => setTargetIp(e.target.value)}
-                className="w-28 bg-black/60 border border-secondary/20 text-secondary font-mono text-[10px] px-2 py-1 rounded-lg focus:outline-none focus:border-secondary/60 tracking-widest"
-                placeholder="10.0.0.1"
-              />
-            </div>
             {/* Attack Mode Selector */}
             <div className="flex flex-col gap-0.5">
               <span className="text-[7px] font-black uppercase tracking-widest text-secondary/60">Attack Mode</span>
