@@ -315,7 +315,7 @@ def latest_report():
 # ---------------------------------------------------------------------------
 # Templates (Map Builder)
 # ---------------------------------------------------------------------------
-DB_PATH = Path(__file__).resolve().parents[1] / "agents" / "memory" / "rvsb_memory.db"
+DB_PATH = Path(__file__).resolve().parents[1] / "data" / "rvsb_memory.db"
 
 class TemplateRequest(BaseModel):
     name: str

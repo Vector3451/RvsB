@@ -78,11 +78,11 @@ def run_concurrent_match(
 
     # Initialize multiple policies for multi-agent teams
     red_policies = [
-        PPOPolicy("red", save_path="agents/rl/red_policy.json")
+        PPOPolicy("red", save_path="data/red_policy.json")
         for _ in range(max(1, red_agents))
     ]
     blue_policies = [
-        PPOPolicy("blue", save_path="agents/rl/blue_policy.json", epsilon=0.4)
+        PPOPolicy("blue", save_path="data/blue_policy.json", epsilon=0.4)
         for _ in range(max(0, blue_agents))
     ]
     llm_available = llm.is_available()

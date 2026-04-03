@@ -151,7 +151,7 @@ class PPOPolicy:
         self.total_reward = 0.0
         self.reward_history: List[float] = []
 
-        self.save_path = save_path or f"agents/rl/{role}_policy.json"
+        self.save_path = save_path or f"data/{self.role}_policy.json"
         self.load()
 
     # ------------------------------------------------------------------
