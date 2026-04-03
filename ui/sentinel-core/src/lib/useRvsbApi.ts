@@ -65,6 +65,8 @@ export interface ApiState {
     redGuidance: string;
     blueGuidance: string;
     training: TrainingState;
+    redModel: string;
+    blueModel: string;
     globalModel: string;
     availableModels: ModelResponse[];
     activeTemplate: TemplateConfig | null;
@@ -83,6 +85,8 @@ class ApiStore {
         redGuidance: '',
         blueGuidance: '',
         globalModel: 'dolphin-llama3:latest',
+        redModel: 'dolphin-llama3:latest',
+        blueModel: 'dolphin-llama3:latest',
         availableModels: [],
         activeTemplate: null,
         redAgents: 1,
@@ -232,8 +236,8 @@ class ApiStore {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     env_url: 'http://localhost:7860',
-                    red_model: this.state.globalModel,
-                    blue_model: this.state.globalModel,
+                    red_model: this.state.redModel,
+                    blue_model: this.state.blueModel,
                     max_steps: maxSteps,
                     red_guidance: this.state.redGuidance,
                     blue_guidance: this.state.blueGuidance,
@@ -290,8 +294,11 @@ class ApiStore {
     }
 
     setGlobalModel(model: string) {
-        this.setState({ globalModel: model });
+        this.setState({ globalModel: model, redModel: model, blueModel: model });
     }
+
+    setRedModel(model: string) { this.setState({ redModel: model }); }
+    setBlueModel(model: string) { this.setState({ blueModel: model }); }
 
     setActiveTemplate(template: TemplateConfig | null) {
         this.setState({ activeTemplate: template });
@@ -375,6 +382,8 @@ export function useRvsbApi() {
         stopTraining: apiStore.stopTraining.bind(apiStore),
         addDirective: apiStore.addDirective.bind(apiStore),
         setGlobalModel: apiStore.setGlobalModel.bind(apiStore),
+        setRedModel: apiStore.setRedModel.bind(apiStore),
+        setBlueModel: apiStore.setBlueModel.bind(apiStore),
         fetchModels: apiStore.fetchModels.bind(apiStore),
         setActiveTemplate: apiStore.setActiveTemplate.bind(apiStore),
         randomizeMap: (count?: number) => apiStore.randomizeMap(count),

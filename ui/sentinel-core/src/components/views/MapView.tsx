@@ -45,7 +45,7 @@ const AgentCounter = ({
 // ── Main MapView ─────────────────────────────────────────────────────────
 
 export const MapView = () => {
-  const { state, startMatch, stopMatch, setRedAgents, setBlueAgents, randomizeMap, setActiveTemplate } = useRvsbApi();
+  const { state, startMatch, stopMatch, setRedAgents, setBlueAgents, setRedModel, setBlueModel, randomizeMap, setActiveTemplate } = useRvsbApi();
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
@@ -203,10 +203,34 @@ export const MapView = () => {
 
           {/* Team Group */}
           <div className="flex items-center gap-2 px-2 border-r border-white/5">
-            <AgentCounter label="RED ADVERSARY" color="red" count={state.redAgents}
-              onInc={() => setRedAgents(state.redAgents + 1)} onDec={() => setRedAgents(Math.max(1, state.redAgents - 1))} />
-            <AgentCounter label="BLUE DEFENDER" color="blue" count={state.blueAgents}
-              onInc={() => setBlueAgents(state.blueAgents + 1)} onDec={() => setBlueAgents(Math.max(0, state.blueAgents - 1))} />
+            {/* Red Agent */}
+            <div className="flex flex-col gap-1">
+              <AgentCounter label="RED ADVERSARY" color="red" count={state.redAgents}
+                onInc={() => setRedAgents(state.redAgents + 1)} onDec={() => setRedAgents(Math.max(1, state.redAgents - 1))} />
+              <select
+                value={state.redModel}
+                onChange={e => setRedModel(e.target.value)}
+                className="w-full bg-black/60 border border-secondary/20 text-secondary font-mono text-[8px] px-1.5 py-0.5 rounded-md focus:outline-none focus:border-secondary/60 tracking-wide"
+              >
+                {(state.availableModels.length > 0 ? state.availableModels : [{ id: state.redModel, name: state.redModel }]).map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+            {/* Blue Agent */}
+            <div className="flex flex-col gap-1">
+              <AgentCounter label="BLUE DEFENDER" color="blue" count={state.blueAgents}
+                onInc={() => setBlueAgents(state.blueAgents + 1)} onDec={() => setBlueAgents(Math.max(0, state.blueAgents - 1))} />
+              <select
+                value={state.blueModel}
+                onChange={e => setBlueModel(e.target.value)}
+                className="w-full bg-black/60 border border-primary/20 text-primary font-mono text-[8px] px-1.5 py-0.5 rounded-md focus:outline-none focus:border-primary/60 tracking-wide"
+              >
+                {(state.availableModels.length > 0 ? state.availableModels : [{ id: state.blueModel, name: state.blueModel }]).map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Red Team Sandbox */}

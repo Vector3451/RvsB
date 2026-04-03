@@ -121,15 +121,40 @@ def run_concurrent_match(
 
         # ── RED TURNS (all red agents act sequentially) ───────────────────
         for agent_idx, red_policy in enumerate(red_policies):
-            red_state = _encode_obs(obs, step, "red")
-            red_idx, _ = red_policy.select_action(red_state)
-            
-            if red_idx > 21:
-                red_idx = 0  # Restrict Red to 0-21 (Recon, Exploit, Exfil)
-                
-            red_action = dict(ACTION_MAP[red_idx])
-            red_action["role"] = "red"
-            red_name = ACTION_NAMES[red_idx]
+        red_state = _encode_obs(obs, step, "red")
+
+        # ── Smart action selection: pick from task-relevant pool ──
+        task_id = (env_config.get("task_id") or "stealth_recon") if env_config else "stealth_recon"
+        if task_id == "stealth_recon":
+            # Passive/slow recon only
+            red_candidates = [0, 1, 33, 34, 35]
+        elif task_id == "precision_exploit":
+            # Recon then targeted exploit
+            if not obs.get("foothold_gained"):
+                found = obs.get("open_services", [])
+                if not found:
+                    red_candidates = [0, 1, 2]  # recon first
+                else:
+                    red_candidates = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+            else:
+                red_candidates = [3, 4, 5, 6, 7, 13, 14]  # keep exploiting
+        else:  # flag_capture / full chain
+            if not obs.get("open_services"):
+                red_candidates = [0, 1, 2]  # start with recon
+            elif not obs.get("foothold_gained"):
+                red_candidates = [3, 4, 5, 6, 9, 12, 13]  # exploit
+            else:
+                red_candidates = [17, 18, 19, 20, 21]  # exfil
+
+        red_idx, _ = red_policy.select_action(red_state)
+        # Override RL with task-aware choice when RL would pick irrelevant action
+        if red_idx not in set(red_candidates):
+            import random as _r
+            red_idx = _r.choice(red_candidates)
+
+        red_action = dict(ACTION_MAP[red_idx])
+        red_action["role"] = "red"
+        red_name = ACTION_NAMES[red_idx]
 
             red_reasoning = ""
             if llm_available and step % 3 == 0:
@@ -319,14 +344,18 @@ def run_concurrent_match(
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _blue_reward(obs: Dict, prev_obs: Dict) -> float:
-    r = float(obs.get("reward") or 0.0)
-    new_alerts = obs.get("alerts_count", 0) - prev_obs.get("alerts_count", 0)
-    if new_alerts > 0:
-        r += 0.1 * new_alerts
+    """Compute Blue's reward — balanced so Red has a fair chance."""
+    r = 0.0
+    # Blue earns for every service it patches
+    new_patched = len(obs.get("patched_services", [])) - len(prev_obs.get("patched_services", []))
+    if new_patched > 0:
+        r += 0.2 * new_patched
+    # Blue loses when attacker gains foothold
     if obs.get("foothold_gained") and not prev_obs.get("foothold_gained"):
-        r -= 0.5
-    if obs.get("flag_found"):
-        r -= 1.0
+        r -= 0.3
+    # Blue loses heavily when data is exfiltrated
+    if obs.get("flag_found") and not prev_obs.get("flag_found"):
+        r -= 0.8
     return round(r, 3)
 
 
