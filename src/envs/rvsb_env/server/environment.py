@@ -222,6 +222,10 @@ class RvsBEnvironment(Environment):
         return RvsBObservation(
             alert_triggered=alert,
             alerts_count=self._alerts,
+            open_services=list(self._found_services),
+            patched_services=list(self._patched),
+            foothold_gained=self._foothold,
+            flag_found=self._flag_accessible,
             total_nodes=len(self._all_services),
             metadata={"console": self._last_console_output, "role": action.role}
         )
@@ -249,6 +253,9 @@ class RvsBEnvironment(Environment):
                     done=False, reward=reward,
                     foothold_gained=self._foothold,
                     failed_attempts=self._failed_attempts,
+                    open_services=list(self._found_services),
+                    patched_services=list(self._patched),
+                    flag_found=self._flag_accessible,
                     total_nodes=len(self._all_services),
                     metadata={"console": f"[BLUE] Service {action.target_service} secured.\n" + self._last_console_output, "role": "blue"}
                 )
@@ -263,6 +270,10 @@ class RvsBEnvironment(Environment):
                     done=False, reward=reward,
                     foothold_gained=self._foothold,
                     failed_attempts=self._failed_attempts,
+                    open_services=list(self._found_services),
+                    patched_services=list(self._patched),
+                    flag_found=self._flag_accessible,
+                    total_nodes=len(self._all_services),
                     metadata={"console": self._last_console_output, "role": "blue"}
                 )
             
@@ -272,6 +283,9 @@ class RvsBEnvironment(Environment):
                 done=False, reward=0.0,
                 foothold_gained=False,
                 failed_attempts=self._failed_attempts,
+                open_services=list(self._found_services),
+                patched_services=list(self._patched),
+                flag_found=self._flag_accessible,
                 total_nodes=len(self._all_services),
                 metadata={"error": "service_patched", "console": "Access Denied: Firewall rule active (Connection Refused).", "role": action.role}
             )
@@ -337,6 +351,9 @@ class RvsBEnvironment(Environment):
             reward=round(score, 3) if success else 0.0,
             foothold_gained=self._foothold,
             failed_attempts=self._failed_attempts,
+            open_services=list(self._found_services),
+            patched_services=list(self._patched),
+            flag_found=self._flag_accessible,
             alert_triggered=not success,
             alerts_count=self._alerts,
             metadata={"console": self._last_console_output, "role": action.role}
