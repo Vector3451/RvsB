@@ -172,13 +172,17 @@ class RvsBEnvironment(Environment):
         else:
             if action.role == "red":
                 # GROUNDED: Run real nmap on Kali container
-                target_ip = "172.17.0.3" # Internal Docker IP for rvsb-target (usually)
+                target_ip = "rvsb-target" # Internal Docker name for target mapping
                 cmd = f"nmap -sV {target_ip}"
                 if action.scan_intensity == "passive":
                     cmd = f"nmap -sn {target_ip}"
                 
                 stdout, stderr, code = DockerBridge.exec_command(DockerBridge.RED_CONTAINER, cmd)
                 self._last_console_output = stdout if stdout else stderr
+                # Fallback to simulation if grounded environment is unreachable
+                if code != 0 or not stdout.strip() or "Host seems down" in stdout:
+                    stdout = " ".join([f"{s} open" for s in self._all_services])
+                    self._last_console_output = f"[Grounded scan failed, using simulation mapping]\n{stdout}"
             else:
                 # GROUNDED: Monitor services on Target container via /proc/net/tcp (netstat alternative)
                 cmd = "cat /proc/net/tcp"
