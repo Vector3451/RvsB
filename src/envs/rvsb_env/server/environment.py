@@ -180,7 +180,7 @@ class RvsBEnvironment(Environment):
                 stdout, stderr, code = DockerBridge.exec_command(DockerBridge.RED_CONTAINER, cmd)
                 self._last_console_output = stdout if stdout else stderr
                 # Fallback to simulation if grounded environment is unreachable
-                if code != 0 or not stdout.strip() or "Host seems down" in stdout:
+                if code != 0 or not stdout.strip() or "Host seems down" in stdout or "0 hosts up" in stdout or "Failed to resolve" in stdout:
                     stdout = " ".join([f"{s} open" for s in self._all_services])
                     self._last_console_output = f"[Grounded scan failed, using simulation mapping]\n{stdout}"
             else:

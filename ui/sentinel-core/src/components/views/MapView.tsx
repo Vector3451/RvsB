@@ -310,43 +310,32 @@ export const MapView = () => {
 
         {/* Terminal content */}
         {showTerminal && (
-          <div className="h-[calc(100%-2.5rem)] flex gap-3 p-3 bg-background/98 backdrop-blur-3xl border-t border-primary/5">
-            {/* Adversary Console */}
-            <div className="flex-1 flex flex-col bg-black/70 rounded-xl border border-secondary/20 overflow-hidden">
-              <div className="bg-secondary/5 px-4 py-2 border-b border-secondary/15 flex items-center gap-2">
-                <div className="w-1 h-1 rounded-full bg-secondary animate-pulse" />
-                <span className="text-[8px] font-black uppercase tracking-[0.3em] text-secondary/70">Adversary Console</span>
+          <div className="h-[calc(100%-2.5rem)] p-3 bg-background/98 backdrop-blur-3xl border-t border-primary/5">
+            <div className="h-full flex flex-col bg-black/70 rounded-xl border border-primary/20 overflow-hidden">
+              <div className="bg-primary/5 px-4 py-2 border-b border-primary/15 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-1 h-1 rounded-full bg-primary animate-pulse" />
+                  <span className="text-[8px] font-black uppercase tracking-[0.3em] text-primary/70">Unified Simulation Console</span>
+                </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-3 font-mono text-[10px] leading-relaxed custom-scrollbar space-y-2">
-                {state.redLogs.length > 0 ? (
-                  state.redLogs.map((log) => (
-                    <div key={log.id} className="border-l border-secondary/20 pl-3">
-                      <div className="text-secondary/40 text-[8px] mb-0.5">[{log.timestamp}] › {log.metadata?.cmd || 'EXEC'}</div>
-                      <div className="text-on-surface/70">{log.metadata?.console || '> Action executed.'}</div>
-                    </div>
-                  ))
+              <div className="flex-1 overflow-y-auto p-4 font-mono text-[10px] leading-relaxed custom-scrollbar space-y-3">
+                {state.logs.length > 0 ? (
+                  state.logs.map((log) => {
+                    const isRed = log.content?.includes('[RED]');
+                    const colorScore = isRed ? "text-secondary" : "text-primary";
+                    return (
+                      <div key={log.id} className="animate-in fade-in slide-in-from-bottom-2">
+                        <div className={`font-bold ${colorScore}`}>
+                          {log.content?.split('  |  ')[0]}
+                        </div>
+                        <div className={`text-on-surface/60 pl-6 border-l ml-1 mt-1 py-0.5 whitespace-pre-wrap ${isRed ? 'border-secondary/20' : 'border-primary/20'}`}>
+                          &gt; {log.metadata?.console || 'Action executed.'}
+                        </div>
+                      </div>
+                    );
+                  })
                 ) : (
-                  <div className="h-full flex items-center justify-center text-secondary/20 italic text-[9px] uppercase tracking-widest">No adversary events yet</div>
-                )}
-              </div>
-            </div>
-
-            {/* Defender Console */}
-            <div className="flex-1 flex flex-col bg-black/70 rounded-xl border border-primary/20 overflow-hidden">
-              <div className="bg-primary/5 px-4 py-2 border-b border-primary/15 flex items-center gap-2">
-                <div className="w-1 h-1 rounded-full bg-primary animate-pulse" />
-                <span className="text-[8px] font-black uppercase tracking-[0.3em] text-primary/70">Defender Console</span>
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 font-mono text-[10px] leading-relaxed custom-scrollbar space-y-2">
-                {state.blueLogs.length > 0 ? (
-                  state.blueLogs.map((log) => (
-                    <div key={log.id} className="border-l border-primary/20 pl-3">
-                      <div className="text-primary/40 text-[8px] mb-0.5">[{log.timestamp}] › {log.metadata?.cmd || 'EXEC'}</div>
-                      <div className="text-on-surface/70">{log.metadata?.console || '> Action executed.'}</div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="h-full flex items-center justify-center text-primary/20 italic text-[9px] uppercase tracking-widest">No defense events yet</div>
+                  <div className="h-full flex items-center justify-center text-primary/20 italic text-[9px] uppercase tracking-widest">No events yet</div>
                 )}
               </div>
             </div>

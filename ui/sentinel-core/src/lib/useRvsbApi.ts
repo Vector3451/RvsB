@@ -157,7 +157,7 @@ class ApiStore {
                     id: Date.now().toString() + Math.random(),
                     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
                     type: 'ai',
-                    content: `>[${actingRole}] ${payload.data.action}\n> Reward: ${payload.data.reward}\n> Reasoning: ${payload.data.reasoning || '(Standard Policy)'}`,
+                    content: payload.data.log,
                     metadata: payload.data.metadata
                 };
 

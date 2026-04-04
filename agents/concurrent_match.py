@@ -161,7 +161,7 @@ def run_concurrent_match(
             if red_reward < 0 or (obs.get("failed_attempts", 0) > 0 and red_reward == 0):
                 red_mistakes.append(f"Step {step+1} [A{agent_idx+1}]: {red_name} failed (r={red_reward:.2f})")
 
-            entry = f"[{step+1:02d}][RED-A{agent_idx+1}] {red_name:<22} reward={red_reward:.3f}"
+            entry = f"[RED] Step {step+1} [Agent {agent_idx+1}]: {red_name} -> Reward: {red_reward:.3f}"
             if red_reasoning:
                 entry += f"  |  {red_reasoning[:70]}"
             timeline.append(entry)
@@ -213,7 +213,7 @@ def run_concurrent_match(
             if blue_reward < 0:
                 blue_mistakes.append(f"Step {step+1} [A{agent_idx+1}]: {blue_name} left attacker unchecked (r={blue_reward:.2f})")
 
-            blue_entry = f"[{step+1:02d}][BLUE-A{agent_idx+1}] {blue_name:<22} defence={blue_reward:.3f}"
+            blue_entry = f"[BLUE] Step {step+1} [Agent {agent_idx+1}]: {blue_name} -> Reward: {blue_reward:.3f}"
             if blue_reasoning:
                 blue_entry += f"  |  {blue_reasoning[:70]}"
             timeline.append(blue_entry)
