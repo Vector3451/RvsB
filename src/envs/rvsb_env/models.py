@@ -61,6 +61,7 @@ class RvsBObservation(BaseModel):
 
     # Exploit state
     foothold_gained: bool = False
+    attacker_at: Optional[str] = None
     failed_attempts: int = 0
 
     # Flag state

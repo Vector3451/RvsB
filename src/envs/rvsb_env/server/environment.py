@@ -81,6 +81,7 @@ class RvsBEnvironment(Environment):
         )
         self._flag_accessible = False
         self._foothold = False
+        self._attacker_at = None
         self._found_services = []
         self._failed_attempts = 0
         self._alerts = 0
@@ -92,6 +93,7 @@ class RvsBEnvironment(Environment):
             alert_triggered=False,
             alerts_count=0,
             foothold_gained=False,
+            attacker_at=None,
             failed_attempts=0,
             flag_found=False,
             flag_content="",
@@ -106,6 +108,7 @@ class RvsBEnvironment(Environment):
             "state": copy.deepcopy(self._state),
             "flag_accessible": self._flag_accessible,
             "foothold": self._foothold,
+            "attacker_at": self._attacker_at,
             "found_services": list(self._found_services),
             "failed_attempts": self._failed_attempts,
             "alerts": self._alerts,
@@ -116,6 +119,7 @@ class RvsBEnvironment(Environment):
         self._state = cp["state"]
         self._flag_accessible = cp["flag_accessible"]
         self._foothold = cp["foothold"]
+        self._attacker_at = cp.get("attacker_at")
         self._found_services = cp["found_services"]
         self._failed_attempts = cp["failed_attempts"]
         self._alerts = cp["alerts"]
@@ -225,6 +229,7 @@ class RvsBEnvironment(Environment):
             open_services=list(self._found_services),
             patched_services=list(self._patched),
             foothold_gained=self._foothold,
+            attacker_at=self._attacker_at,
             flag_found=self._flag_accessible,
             total_nodes=len(self._all_services),
             metadata={"console": self._last_console_output, "role": action.role}
@@ -252,6 +257,7 @@ class RvsBEnvironment(Environment):
                 return RvsBObservation(
                     done=False, reward=reward,
                     foothold_gained=self._foothold,
+                    attacker_at=self._attacker_at,
                     failed_attempts=self._failed_attempts,
                     open_services=list(self._found_services),
                     patched_services=list(self._patched),
@@ -269,6 +275,7 @@ class RvsBEnvironment(Environment):
                 return RvsBObservation(
                     done=False, reward=reward,
                     foothold_gained=self._foothold,
+                    attacker_at=self._attacker_at,
                     failed_attempts=self._failed_attempts,
                     open_services=list(self._found_services),
                     patched_services=list(self._patched),
@@ -282,6 +289,7 @@ class RvsBEnvironment(Environment):
             return RvsBObservation(
                 done=False, reward=0.0,
                 foothold_gained=False,
+                attacker_at=self._attacker_at,
                 failed_attempts=self._failed_attempts,
                 open_services=list(self._found_services),
                 patched_services=list(self._patched),
@@ -338,8 +346,12 @@ class RvsBEnvironment(Environment):
         score = 1.0 / (1 + self._failed_attempts)
         if success:
             self._foothold = True
+            self._attacker_at = action.target_service
             self._flag_accessible = True
             self._state.phase = "exfiltrate"
+            if "Target visible but no sensitive data found" in self._last_console_output:
+                self._last_console_output = self._last_console_output.replace("Target visible but no sensitive data found.", "").strip()
+            self._last_console_output += f"\n\n[SUCCESS] Exploit payload delivered successfully. Gained shell access on {action.target_service}!"
 
         if action.role == "red":
             self._state.red_score = max(self._state.red_score, score if success else 0.0)
@@ -350,6 +362,7 @@ class RvsBEnvironment(Environment):
             done=False,
             reward=round(score, 3) if success else 0.0,
             foothold_gained=self._foothold,
+            attacker_at=self._attacker_at,
             failed_attempts=self._failed_attempts,
             open_services=list(self._found_services),
             patched_services=list(self._patched),

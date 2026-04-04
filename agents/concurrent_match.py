@@ -381,5 +381,5 @@ def _build_network_state(obs: Dict, step: int, config: Optional[Dict] = None) ->
         "alerts":           obs.get("alerts_count",    0),
         "foothold":         obs.get("foothold_gained", False),
         "flag_captured":    obs.get("flag_found",      False),
-        "attacker_at":      open_svc[-1] if open_svc else None,
+        "attacker_at":      obs.get("attacker_at") or (open_svc[-1] if open_svc else None),
     }
